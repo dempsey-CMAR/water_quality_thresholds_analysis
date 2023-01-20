@@ -31,12 +31,12 @@ dt_options <- list(
       columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
-
 dat <- read_csv(here("data/summary.csv"), show_col_types = FALSE) 
-
 ```
 
 # EXPLORATORY ANALYSIS: THRESHOLDS
+
+**DRAFT January 19, 2023**
 
 - Data submitted to the Open Data Portal in December 2022.
 
@@ -75,7 +75,7 @@ p <- temp_county %>%
   geom_col(
     position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
   ) +
-  geom_text(aes(label = n_percent), nudge_x = 1.7e5, size = 3) +
+  geom_text(aes(label = n_percent), nudge_x = 1.9e5, size = 3) +
   scale_y_discrete(name = "", limits = rev) +
   scale_x_continuous("Number of Temperature Observations")
 
@@ -125,7 +125,7 @@ temp_depth <- dat %>%
 ### Figure 3
 ```{r}
 #| fig-height: 10
-#| fig-cap: Number of temperature observations at each depth (where depth is rounded to the nearest whole number).
+#| fig-cap: Number of temperature observations at each depth.
 #| fig-cap-location: top
 
 p <- ggplot(temp_depth, aes(n, factor(depth), fill = factor(depth))) +
@@ -135,7 +135,6 @@ p <- ggplot(temp_depth, aes(n, factor(depth), fill = factor(depth))) +
   theme(legend.position = "none")
 
 ggplotly(p)
-
 ```
 
 ### Figure 4
@@ -148,15 +147,18 @@ p <- ggplot(temp_depth, aes(mean, depth, col = factor(depth))) +
    geom_point(size = 1) +
    geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
     scale_y_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
-   scale_x_continuous("Temperature (mean +/- standard deviation)") 
+   scale_x_continuous("Temperature (mean +/- standard deviation)")
   
 ggplotly(p)
-
 ```
-
 :::
 
 ## County + Depth
+
+```{r}
+temp_county_depth <- dat %>% 
+  filter(group == "county_depth", variable == "Temperature") 
+```
 
 ::: panel-tabset
 
@@ -166,63 +168,55 @@ ggplotly(p)
 #| fig-cap: Depths with temperature measurements by county.
 #| fig-cap-location: top
 
-temp_county_depth <- dat %>% 
-  filter(group == "county_depth",
-         variable == "Temperature") 
-
 p <- ggplot(temp_county_depth, aes(depth, county, col = factor(depth))) +
   geom_point(size = 4) +
   scale_y_discrete(name = "", limits = rev) +
   scale_x_continuous("Sensor Depth Below the Surface at Low Tide (m)")
 
 ggplotly(p)
-
 ```
 
 ### Figure 6
 ```{r}
-#| fig-height: 12
+#| fig-height: 10
 #| fig-cap: The number of temperature obervations at each depth for each county.
 #| fig-cap-location: top
 
-p <- ggplot(temp_county_depth, aes(n, factor(depth), fill = factor(depth))) +
+p <- ggplot(temp_county_depth, aes(depth, n, fill = factor(depth))) +
   geom_col() +
-  scale_y_discrete(name = "Sensor Depth Below the Surface at Low Tide (m)", limits = rev) +
-  scale_x_continuous("Number of Temperature Observations") +
-  facet_wrap(~ county, ncol = 3) +
+  scale_x_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
+  scale_y_continuous("Number of Temperature Observations") +
+  facet_wrap(~ county, ncol = 3) + 
+  coord_flip() +
   theme(legend.position = "none")
 
 ggplotly(p)
-
 ```
 
 ### Figure 7
 ```{r}
-#| fig-height: 12
+#| fig-height: 10
 #| fig-cap: Average temperature and standard deviation for each county at each measured depth. 
 
 p <- ggplot(temp_county_depth, aes(mean, depth, col = factor(depth))) +
-   geom_point(size = 1) +
-   geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
-    scale_y_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
-   scale_x_continuous("Temperature (mean +/- standard deviation)") +
-   facet_wrap(~ county, ncol = 3)
-  
-ggplotly(p)
+  geom_point(size = 1) +
+  geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+  scale_y_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
+  scale_x_continuous("Temperature (mean +/- standard deviation)") +
+  facet_wrap(~ county, ncol = 3)
 
+ggplotly(p)
 ```
 :::
 
 - Could group depths before average, but how to group? 15 m could be bottom for 1 station and middle of water column for another.
-- If do by depth, should be station + depth
-- Digby 31 m: measured at Long Island from January - May; 32: measured at Long Island 2 from July - November.
+  - If depth matters, then station matters too.
+- Digby 31 m: measured at Long Island from January - May; 32 m: measured at Long Island 2 from July - November.
 - Guysborough 11 m: only measured for Tanner Island and English Harbour in Winter 2019 (February - March). Bottom temp.
 - Inverness: only one deployment for many depths
 - Lunenburg: clear decease in temperature at depth.
 - Shelburne 16 m: measured at Ingomar from Janurary - May, then only at 15 m
 - Victoria: not a lot of difference in temperature through the water column
-
-
 
 # Temperature: Climatology
 
@@ -253,13 +247,11 @@ p <- ggplot(temp_month, aes(n, month)) +
   scale_x_continuous("Number of Temperature Observations")
 
 ggplotly(p)
-
 ```
 
 ### Figure 9
 ```{r}
 #| fig-height: 8
-#| fig-cap: The mean and standard deviation of temperature in each county.
 #| fig-cap-location: top
 
 p <- ggplot(temp_month, aes(mean, month)) +
@@ -274,20 +266,101 @@ ggplotly(p)
 
 :::
 
-## Month + County
+## Month + Year 
+
 ```{r}
-temp_month_county <- dat %>% 
-  filter(group == "county_month", variable == "Temperature") %>% 
+temp_month_year <- dat %>% 
+  filter(group == "all_month_year", variable == "Temperature") %>%
+  group_by(year) %>% 
   mutate(
     n_percent = round(n * 100 / sum(n), digits = 1),
     month = month(month, label = TRUE)
   ) 
 ```
 
+::: panel-tabset
+
 ### Figure 10
 ```{r}
-#| fig-height: 12
-#| fig-cap: The number of temperatures observations in each month. The number at the end of each bar indicates the percent of the total temperature observations from the associated month.
+#| fig-height: 10
+#| fig-cap: The number of temperature observations for each month by year.
+#| fig-cap-location: top
+
+p <- ggplot(temp_month_year, aes(n, month)) +
+  geom_col(
+    position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+  ) +
+  geom_text(aes(label = n_percent), nudge_x = 1e5, size = 3) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Number of Temperature Observations") +
+  facet_wrap(~ year) + 
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 11
+```{r}
+#| fig-height: 10
+#| fig-cap: Monthly climatology by year.
+#| fig-cap-location: top
+
+p <- ggplot(temp_month_year, aes(mean, month)) +
+  geom_point(size = 1) +
+  geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Temperature (mean +/- standard deviation)") +
+  facet_wrap(~ year)  + 
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 12
+```{r}
+#| fig-height: 8
+#| fig-cap: Monthly climatology by year - interactive.
+#| fig-cap-location: top
+
+p <- ggplot(temp_month_year, aes(month, mean, group = year, col = factor(year))) +
+  geom_point(size = 3) +
+  geom_line(aes(col = factor(year))) +
+  geom_ribbon(aes(ymin = mean - stdev, ymax = mean + stdev,
+                  fill = factor(year)), alpha = 0.25, col = NA) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous("Temperature (mean +/- standard deviation)") 
+
+ggplotly(p)
+```
+
+### Climatology Table
+
+```{r}
+temp_month_year %>% 
+  select(year, month, n, mean, stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+:::
+
+- Consistent observations starting in 2018
+- Fairly uniform coverage for each month (except for January 2018)
+- 2019 was the coldest year (in February + March)
+- 2017 was relatively warm
+
+## Month + County
+```{r}
+temp_month_county <- dat %>% 
+  filter(group == "county_month", variable == "Temperature") %>% 
+  mutate(month = month(month, label = TRUE)) 
+```
+
+::: panel-tabset
+
+### Figure 13
+```{r}
+#| fig-height: 10
+#| fig-cap: The number of temperature observations in each month for each county.
 #| fig-cap-location: top
 
 p <- ggplot(temp_month_county, aes(n, month)) +
@@ -296,31 +369,31 @@ p <- ggplot(temp_month_county, aes(n, month)) +
   ) +
   scale_y_discrete(name = "", limits = rev) +
   scale_x_continuous("Number of Temperature Observations") +
-  facet_wrap(~ county, ncol = 3)
+  facet_wrap(~ county, ncol = 3) +
+  theme(panel.spacing.y = unit(15, "lines"))
 
 ggplotly(p)
-
 ```
 
-### Figure 11
+### Figure 14
 ```{r}
-#| fig-height: 8
+#| fig-height: 10
 #| fig-cap: The mean and standard deviation of temperature in each county.
 #| fig-cap-location: top
 
 p <- ggplot(temp_month_county, aes(month, mean)) +
   geom_point(size = 1) +
   geom_errorbar(aes(ymin = mean - stdev, ymax = mean + stdev), width = 0) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous("Temperature (mean +/- standard deviation)") + facet_wrap(~ county, ncol = 3)
+  scale_x_discrete(name = "", breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")) +
+  scale_y_continuous("Temperature (mean +/- standard deviation)") + facet_wrap(~ county, ncol = 3) +
+  theme(panel.spacing.y = unit(15, "lines"))
 
 ggplotly(p)
-
 ```
 
-### Figure 12
+### Figure 15
 ```{r}
-#| fig-height: 12
+#| fig-height: 8
 #| fig-cap: The mean and standard deviation of temperature in each county.
 #| fig-cap-location: top
 
@@ -333,17 +406,99 @@ p <- ggplot(temp_month_county, aes(month, mean, group = county, col = county)) +
   scale_y_continuous("Temperature (mean +/- standard deviation)") 
 
 ggplotly(p)
-
 ```
-
 :::
 
 - Cape Breton: few temperature observations each month.
 - Inverness: most temperature observations from June to November.
-- Could try grouping by YEAR and MONTH to see how many observations.
 
+## Month + County + Year
+```{r}
+temp_month_county_year <- dat %>% 
+  filter(group == "county_month_year", variable == "Temperature") %>% 
+  group_by(year, month) %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE)
+  ) %>% 
+  select(-c(variable, units, group, station, depth)) %>% 
+  ungroup()
+```
 
+### Number of Obervations
 
+Note: x-axis is not consistent between figures.
 
+Figures are not interactive.
 
+::: panel-tabset
 
+```{r}
+#| fig-height: 8
+#| results: "asis"
+
+counties <- unique(temp_month_county_year$county)
+
+for(i in seq_along(counties)){
+  
+  county.i <- counties[i]
+  dat.i <- temp_month_county_year %>% filter(county == county.i)
+  
+  cat('\n###', county.i, '\n')
+  
+  p <- ggplot(dat.i, aes(n, month)) +
+    geom_col(
+      position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+    ) +
+    scale_y_discrete(name = "", limits = rev) +
+    scale_x_continuous("Number of Temperature Observations") +
+    facet_wrap(~ year)
+
+  print(p)
+  
+}
+```
+:::
+
+### Climatology
+
+Note: colour scale is not consistent between figures.
+
+Figures are not interactive.
+
+::: panel-tabset
+
+```{r}
+#| fig-height: 6
+#| results: "asis"
+
+for(i in seq_along(counties)){
+  
+  county.i <- counties[i]
+  dat.i <- temp_month_county_year %>% 
+    filter(county == county.i)
+  
+  cat('\n###', county.i, '\n')
+  
+  p <- ggplot(dat.i, aes(month, mean, group = year, col = factor(year))) +
+    geom_point(size = 3) +
+    geom_line(aes(col = factor(year))) +
+    geom_ribbon(
+      aes(ymin = mean - stdev, ymax = mean + stdev, fill = factor(year)), 
+      alpha = 0.25, col = NA
+    ) +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(
+      "Temperature (mean +/- standard deviation)",
+      limits = c(-2, 27)
+    )  
+  
+  print(p)
+}
+  
+```
+
+:::
+
+- Inverness: not sure what is going on in 2019. Likely related to where data was sampled.
+- Pictou: no data June - August 2020
