@@ -1,0 +1,490 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width=8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(lubridate)
+library(plotly)
+library(readr)
+library(quarto)
+
+theme_set(theme_light())
+
+dt_options <- list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      scrollY = "500px",
+      pageLength = 500,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+dat <- read_csv(here("data/summary.csv"), show_col_types = FALSE) 
+```
+
+# EXPLORATORY ANALYSIS: THRESHOLDS
+
+**DRAFT January 19, 2023**
+
+- Data submitted to the Open Data Portal in December 2022.
+
+- Preliminary QC was applied to the data.
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
+  
+- Depth rounded to nearest whole number
+  - Results in depth of 0 m for 1042, Captains Pond, Ile due Havre, Sissiboo, Sober Island. and Back Harbour.
+
+# Dissolved Oxygen:  Gross Range
+
+```{r}
+county <- dat %>% 
+  filter(group == "county" | group == "all_data", variable == "Dissolved Oxygen", units == "percent saturation") %>% 
+  mutate(
+    county = if_else(group == "all_data", "All", county),
+    n_percent = round(n * 100 / max(n), digits = 1)
+  ) %>% 
+  select(-c(depth, month, group))
+```
+
+## County
+
+::: panel-tabset
+
+### Figure 1
+```{r}
+#| fig-height: 8
+#| fig-cap: The number of Dissolved Oxygens observations in each county. The number at the end of each bar indicates the percent of the total Dissolved Oxygen observations from the associated county.
+#| fig-cap-location: top
+
+p <- county %>% 
+  filter(county != "All") %>% 
+  ggplot(aes(n, county)) +
+  geom_col(
+    position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+  ) +
+  geom_text(aes(label = n_percent), nudge_x = 3e4, size = 3) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Number of Dissolved Oxygen Observations")
+
+ggplotly(p)
+```
+
+### Figure 2
+```{r}
+#| fig-height: 8
+#| fig-cap: The mean and standard deviation of Dissolved Oxygen in each county.
+#| fig-cap-location: top
+
+p <- ggplot(county, aes(mean, county)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Dissolved Oxygen (percent saturation)")
+
+ggplotly(p)
+```
+
+### Table 1
+```{r}
+#| fig-cap: Summary statistics of Dissolved Oxygen observations - total and by county.
+#| fig-cap-location: top
+county %>% 
+  select(county, n, mean, stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+:::
+
+- Inverness: includes dissolved oxygen data at depth in Whycocomagh Basin (18 m and 40 m at Deep Basin, 28 m at Aberdeen, and 17. m at 0814x East and West).
+- Pictou includes data from Piper Lake.
+
+
+## Depth
+
+```{r}
+depth <- dat %>% 
+  filter(group == "all_depth", variable == "Dissolved Oxygen", units == "percent saturation") %>% 
+  mutate(n_percent = round(n * 100 / sum(n), digits = 1)) %>% 
+  select(-c(month, group, station, units, variable, county))
+```
+
+::: panel-tabset
+
+### Figure 3
+```{r}
+#| fig-height: 10
+#| fig-cap: Number of Dissolved Oxygen observations at each depth.
+#| fig-cap-location: top
+
+p <- ggplot(depth, aes(n, factor(depth), fill = factor(depth))) +
+  geom_col(position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)) +
+  scale_x_continuous("Number of Dissolved Oxygen Observations") +
+  scale_y_discrete(name = "Sensor Depth Below Surface at Low Tide (m)", limits = rev) +
+  theme(legend.position = "none")
+
+ggplotly(p)
+```
+
+### Figure 4
+```{r}
+#| fig-height: 10
+#| fig-cap: Mean and standard deviation of Dissolved Oxygen at each depth.
+#| fig-cap-location: top
+
+p <- ggplot(depth, aes(mean, depth, col = factor(depth))) +
+   geom_point(size = 1) +
+   geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+    scale_y_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
+   scale_x_continuous("Dissolved Oxygen (percent saturation))")
+  
+ggplotly(p)
+```
+:::
+
+- DO sensor at 60 m at Tickle Island from February 2020 to August 2021
+
+## County + Depth
+
+```{r}
+county_depth <- dat %>% 
+  filter(group == "county_depth", variable == "Dissolved Oxygen", units == "percent saturation") 
+```
+
+::: panel-tabset
+
+### Figure 5
+```{r}
+#| fig.height: 8
+#| fig-cap: Depths with Dissolved Oxygen measurements by county.
+#| fig-cap-location: top
+
+p <- ggplot(county_depth, aes(depth, county, col = factor(depth))) +
+  geom_point(size = 4) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Sensor Depth Below the Surface at Low Tide (m)")
+
+ggplotly(p)
+```
+
+### Figure 6
+```{r}
+#| fig-height: 10
+#| fig-cap: The number of Dissolved Oxygen obervations at each depth for each county.
+#| fig-cap-location: top
+
+p <- ggplot(county_depth, aes(depth, n, fill = factor(depth))) +
+  geom_col() +
+  scale_x_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
+  scale_y_continuous("Number of Dissolved Oxygen Observations") +
+  facet_wrap(~ county, ncol = 3) + 
+  coord_flip() +
+  theme(legend.position = "none")
+
+ggplotly(p)
+```
+
+### Figure 7
+```{r}
+#| fig-height: 10
+#| fig-cap: Average Dissolved Oxygen and standard deviation for each county at each measured depth. 
+
+p <- ggplot(county_depth, aes(mean, depth, col = factor(depth))) +
+  geom_point(size = 1) +
+  geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+  scale_y_reverse(name = "Sensor Depth Below the Surface at Low Tide (m)") +
+  scale_x_continuous("Dissolved Oxygen (percent saturation)") +
+  facet_wrap(~ county, ncol = 3)
+
+ggplotly(p)
+```
+:::
+
+- Inverness: includes data from below the oxycline in Whycocomagh Basin
+
+# Dissolved Oxygen: Climatology
+
+## Month
+```{r}
+month <- dat %>% 
+  filter(group == "all_month", variable == "Dissolved Oxygen", units == "percent saturation") %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE)
+  ) 
+```
+
+::: panel-tabset
+
+### Figure 8
+```{r}
+#| fig-height: 8
+#| fig-cap: The number of Dissolved Oxygens observations in each month. The number at the end of each bar indicates the percent of the total Dissolved Oxygen observations from the associated month.
+#| fig-cap-location: top
+
+p <- ggplot(month, aes(n, month)) +
+  geom_col(
+    position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+  ) +
+  geom_text(aes(label = n_percent), nudge_x = 2e4, size = 3) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Number of Dissolved Oxygen Observations")
+
+ggplotly(p)
+```
+
+### Figure 9
+```{r}
+#| fig-height: 8
+#| fig-cap-location: top
+
+p <- ggplot(month, aes(mean, month)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Dissolved Oxygen (mean +/- standard deviation)")
+
+ggplotly(p)
+
+```
+
+:::
+
+- Fewer DO observations in the spring / summer due to biofouling.
+- High standard deviation from June to November from the Whycocomagh sampling.
+
+## Month + Year 
+
+```{r}
+month_year <- dat %>% 
+  filter(group == "all_month_year", variable == "Dissolved Oxygen", units == "percent saturation") %>%
+  group_by(year) %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE)
+  ) 
+```
+
+::: panel-tabset
+
+### Figure 10
+```{r}
+#| fig-height: 10
+#| fig-cap: The number of Dissolved Oxygen observations for each month by year.
+#| fig-cap-location: top
+
+p <- ggplot(month_year, aes(n, month)) +
+  geom_col(
+    position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+  ) +
+  geom_text(aes(label = n_percent), nudge_x = 2e4, size = 3) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Number of Dissolved Oxygen Observations") +
+  facet_wrap(~ year) + 
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 11
+```{r}
+#| fig-height: 10
+#| fig-cap: Monthly climatology by year.
+#| fig-cap-location: top
+
+p <- ggplot(month_year, aes(mean, month)) +
+  geom_point(size = 1) +
+  geom_errorbar(aes(xmin = mean - stdev, xmax = mean + stdev), width = 0) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Dissolved Oxygen (mean +/- standard deviation)") +
+  facet_wrap(~ year) + 
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 12
+```{r}
+#| fig-height: 8
+#| fig-cap: Monthly climatology by year - interactive.
+#| fig-cap-location: top
+
+p <- ggplot(month_year, aes(month, mean, group = year, col = factor(year))) +
+  geom_point(size = 3) +
+  geom_line(aes(col = factor(year))) +
+  geom_ribbon(aes(ymin = mean - stdev, ymax = mean + stdev,
+                  fill = factor(year)), alpha = 0.25, col = NA) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous("Dissolved Oxygen (mean +/- standard deviation)") 
+
+ggplotly(p)
+```
+
+### Climatology Table
+
+```{r}
+month_year %>% 
+  select(year, month, n, mean, stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+:::
+
+## Month + County
+```{r}
+month_county <- dat %>% 
+  filter(group == "county_month", variable == "Dissolved Oxygen", units == "percent saturation") %>% 
+  mutate(month = month(month, label = TRUE)) 
+```
+
+::: panel-tabset
+
+### Figure 13
+```{r}
+#| fig-height: 10
+#| fig-cap: The number of Dissolved Oxygen observations in each month for each county.
+#| fig-cap-location: top
+
+p <- ggplot(month_county, aes(n, month)) +
+  geom_col(
+    position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+  ) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Number of Dissolved Oxygen Observations") +
+  facet_wrap(~ county, ncol = 3) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 14
+```{r}
+#| fig-height: 10
+#| fig-cap: The mean and standard deviation of Dissolved Oxygen in each county.
+#| fig-cap-location: top
+
+p <- ggplot(month_county, aes(month, mean)) +
+  geom_point(size = 1) +
+  geom_errorbar(aes(ymin = mean - stdev, ymax = mean + stdev), width = 0) +
+  scale_x_discrete(name = "", breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")) +
+  scale_y_continuous("Dissolved Oxygen (mean +/- standard deviation)") + facet_wrap(~ county, ncol = 3) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 15
+```{r}
+#| fig-height: 8
+#| fig-cap: The mean and standard deviation of Dissolved Oxygen in each county.
+#| fig-cap-location: top
+
+p <- ggplot(month_county, aes(month, mean, group = county, col = county)) +
+  geom_point(size = 3) +
+  geom_line(aes(col = county)) +
+  geom_ribbon(aes(ymin = mean - stdev, ymax = mean + stdev,
+                  fill = county), alpha = 0.25, col = NA) +
+  scale_x_discrete(name = "") +
+  scale_y_continuous("Dissolved Oxygen (mean +/- standard deviation)") 
+
+ggplotly(p)
+```
+:::
+
+## Month + County + Year
+```{r}
+month_county_year <- dat %>% 
+  filter(group == "county_month_year", variable == "Dissolved Oxygen", units == "percent saturation") %>% 
+  group_by(year, month) %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE)
+  ) %>% 
+  select(-c(variable, units, group, station, depth)) %>% 
+  ungroup()
+```
+
+### Number of Obervations
+
+Note: x-axis is not consistent between figures.
+
+Figures are not interactive.
+
+::: panel-tabset
+
+```{r}
+#| fig-height: 8
+#| results: "asis"
+
+counties <- unique(month_county_year$county)
+
+for(i in seq_along(counties)){
+  
+  county.i <- counties[i]
+  dat.i <- month_county_year %>% filter(county == county.i)
+  
+  cat('\n###', county.i, '\n')
+  
+  p <- ggplot(dat.i, aes(n, month)) +
+    geom_col(
+      position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
+    ) +
+    scale_y_discrete(name = "", limits = rev) +
+    scale_x_continuous("Number of Dissolved Oxygen Observations") +
+    facet_wrap(~ year)
+
+  print(p)
+  
+}
+```
+:::
+
+### Climatology
+
+Note: y axis and colour scales are not consistent between figures.
+
+Figures are not interactive.
+
+::: panel-tabset
+
+```{r}
+#| fig-height: 6
+#| results: "asis"
+
+for(i in seq_along(counties)){
+  
+  county.i <- counties[i]
+  dat.i <- month_county_year %>% 
+    filter(county == county.i)
+  
+  cat('\n###', county.i, '\n')
+  
+  p <- ggplot(dat.i, aes(month, mean, group = year, col = factor(year))) +
+    geom_point(size = 3) +
+    geom_line(aes(col = factor(year))) +
+    geom_ribbon(
+      aes(ymin = mean - stdev, ymax = mean + stdev, fill = factor(year)), 
+      alpha = 0.25, col = NA
+    ) +
+    scale_x_discrete(name = "") +
+    scale_y_continuous(
+      "Dissolved Oxygen (mean +/- standard deviation)"
+    )  
+  
+  print(p)
+}
+  
+```
+
+:::
