@@ -11,5 +11,4 @@ summarise_grouped_data <- function(dat, group_name, ...) {
     ) %>%
     mutate(group = group_name) %>%
     ungroup()
-
 }
