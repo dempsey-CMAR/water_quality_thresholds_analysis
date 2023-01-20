@@ -6,88 +6,49 @@ library(sensorstrings)
 library(strings)
 library(readr)
 
+source(here("functions/summarise_grouped_data.R"))
+
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS)
 
 all <- dat_all %>%
-  group_by(VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "all_data") %>%
-  ungroup()
+  summarise_grouped_data("all_data", VARIABLE, UNITS)
 
 county <- dat_all %>%
-  group_by(COUNTY, VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "county") %>%
-  ungroup()
+  summarise_grouped_data("county", COUNTY, VARIABLE, UNITS)
 
 county_depth <- dat_all %>%
   mutate(DEPTH = round(as.numeric(DEPTH))) %>%
-  group_by(COUNTY, DEPTH, VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "county_depth") %>%
-  ungroup()
-
+  summarise_grouped_data("county_depth", COUNTY, DEPTH, VARIABLE, UNITS)
 
 county_month <- dat_all %>%
   mutate(MONTH = month(TIMESTAMP)) %>%
-  group_by(COUNTY, MONTH, VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "county_month") %>%
-  ungroup()
+  summarise_grouped_data("county_month", COUNTY, MONTH, VARIABLE, UNITS)
+
+county_month_year <- dat_all %>%
+  mutate(MONTH = month(TIMESTAMP), YEAR = year(TIMESTAMP)) %>%
+  summarise_grouped_data("county_month_year", COUNTY, YEAR, MONTH, VARIABLE, UNITS)
 
 all_month <- dat_all %>%
   mutate(MONTH = month(TIMESTAMP)) %>%
-  group_by(MONTH, VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "all_month") %>%
-  ungroup()
+  summarise_grouped_data("all_month", MONTH, VARIABLE, UNITS)
 
 all_station <- dat_all %>%
-  group_by(COUNTY, STATION, VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "all_station") %>%
-  ungroup()
+  summarise_grouped_data("all_station", COUNTY, STATION, VARIABLE, UNITS)
 
 all_depth <-  dat_all %>%
   mutate(DEPTH = round(as.numeric(DEPTH))) %>%
-  group_by(DEPTH, VARIABLE, UNITS) %>%
-  summarise(
-    mean = round(mean(VALUE), digits = 3),
-    stdev = round(sd(VALUE), digits = 3),
-    n = n()
-  ) %>%
-  mutate(group = "all_depth") %>%
-  ungroup()
+  summarise_grouped_data("all_depth", DEPTH, VARIABLE, UNITS)
+
+all_month_year <- dat_all %>%
+  mutate(MONTH = month(TIMESTAMP), YEAR = year(TIMESTAMP)) %>%
+  summarise_grouped_data("all_month_year", YEAR, MONTH, VARIABLE, UNITS)
+
 
 
 dat_out <- bind_rows(
-  all, all_month, all_station, all_depth,
-  county, county_depth, county_month
+  all, all_month, all_month_year, all_station, all_depth,
+  county, county_depth, county_month, county_month_year
 ) %>%
   rename(
     variable = VARIABLE,
@@ -95,6 +56,7 @@ dat_out <- bind_rows(
     county = COUNTY,
     station = STATION,
     depth = DEPTH,
+    year = YEAR,
     month = MONTH
   )
 
