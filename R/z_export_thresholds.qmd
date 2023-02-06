@@ -49,9 +49,24 @@ gr_thresholds <- read_csv(
 
 **DRAFT February 3, 2023**
 
+- Intro text about QARTOD tests.
+- Table (with links?) of the tests we are applying
+- Table of flag values 
+  - [Pass]{style="color: #009200;"}
+  - [Not Evaluated]{style="color: #E6E1BC;"}
+  - [Suspect/Of Interest]{style="color: #EDA247;"}
+  - [Fail]{style="color: #DB4325;"}
+  - [Missing Data]{style="color: #5A5A5A;"}
+- Need to select thresholds for each test
+
+We based thresholds off historical data.
+
+The historical data used here was the Coastal Monitoring Program Water Quality data sets submitted to the [Nova Scotia Open Data Portal](https://data.novascotia.ca/browse?q=coastal%20monitoring&sortBy=relevance) in December 2022. Preliminary quality control measures (e.g., obvious outliers and suspected biofouling removed) were applied to these datasets before submission. Additionally, freshwater and other outlier stations were excluded from the threshold analysis to provide a better representation of "normal" conditions. 
+
+
 # Gross Range
 
-The Gross Range test aims to flag observations that fall outside of the sensor measurement range (flagged [Fail]{style="color: #DB4325;"}) and observations that are statistical outliers (flagged [Suspect/Of Interest]{style="color: #EDA247;"}).
+The Gross Range Test aims to flag observations that fall outside of the sensor measurement range (flagged [Fail]{style="color: #DB4325;"}) and observations that are statistical outliers (flagged [Suspect/Of Interest]{style="color: #EDA247;"}).
 
 Thresholds for [failed]{style="color: #DB4325;"} observations are determined by the sensor specifications, and were assigned based on information in the associated manuals.
 
@@ -147,11 +162,11 @@ user_thresh %>%
 #### Considerations
 The quality[^1] of these user thresholds may vary by county, depending on the number and distribution (in space and time) of observations. For example, there are relatively few observations for some counties compared to others (@fig-temp-n-obs). Cape Breton has the fewest observations at ~30,000 over 3 years and two stations, while Guysborough has the most at nearly 1 million over 7 years and 35 stations. For consistency, the counties with fewer observations were not pooled with counties with more observations, although this may be a future task. Otherwise, the user thresholds for counties with less data should be re-evaluated when more observations are collected.
 
-Calculating thresholds at the county scale provides relatively coarse threshold values. Ideally, these would be resolved by depth and a smaller spatial scale (e.g., waterbody or station). However, calculating thresholds for each county and depth provides its own challenges. For example, the data become very patchy when grouped by county, depth, and month (e.g., 169 month-county-depth combinations with 0 observations). Additionally, this would result in 141 user-defined temperature thresholds, which is more than the 2.5 person Data Governance team can reasonably manage.
+Calculating thresholds at the county scale provides relatively coarse threshold values. Ideally, these would be resolved by depth and a smaller spatial scale (e.g., waterbody or station). However, calculating thresholds for each county and depth provides its own challenges. For example, the data become very patchy when grouped by county, depth, and month (e.g., 169 month-county-depth combinations with 0 observations). Additionally, the same depth can represent a different part of the water column for different stations. For example, at the Barren Island station in Guysborough county, the 15 m sensor is near the bottom. In contrast, 15 m is in the top 20 % of the water column at Tickle Island, also in Guysborough county. Finally, aggregating thresholds by county and depth would result in 141 user-defined temperature thresholds, which is more than the 2.5 person Data Governance team can reasonably manage.
 
 Because depth was not accounted for, it is expected that observations from very shallow sensors (e.g., <= 2 m) will be assigned the [Suspect/Of Interest]{style="color: #EDA247;"} flag, despite appearing reasonable in the context of the deployment. In this case, the flag should be interpreted as ["Of Interest"]{style="color: #EDA247;"}, for highlighting a relatively warm observation.
 
-The user_min threshold is typically << 0 degrees Celsius (Table 2), and is therefore not expected to flag any observations. For most counties (all except Annapolis, Queens, Shelburne, and Digby), the user_min is less than the sensor_min for the aquameasure and vr2ar sensors. In this case, any observations less than the sensor_min would [fail]{style="color: #DB4325;"} the grossrange test (i.e., the user_min would be ignored). It may be useful for other users to apply their own user_min threshold to the data to highlight cold observations that are [Suspect/Of Interest]{style="color: #EDA247;"}. For example, those interested in salmonid aquaculture may wish to flag observations at or near the superchill threshold (user_min = 0.7 degree C).
+The user_min threshold is typically << 0 degrees Celsius (Table 2), and is therefore not expected to flag any observations. For most counties (all except Annapolis, Queens, Shelburne, and Digby), the user_min is less than the sensor_min for the aquameasure and vr2ar sensors. In this case, any observations less than the sensor_min would [fail]{style="color: #DB4325;"} the gross range test (i.e., the user_min would be ignored). It may be useful for other users to apply their own user_min threshold to the data to highlight cold observations that are [Suspect/Of Interest]{style="color: #EDA247;"}. For example, those interested in salmonid aquaculture may wish to flag observations at or near the superchill threshold (user_min = -0.7 degree C).
 
 ## Suporting Figures
 
@@ -168,7 +183,7 @@ county_month <- dat %>%
 
 ::: panel-tabset
 
-### Figure X
+### Figure 1
 ```{r}
 #| label: fig-temp-n-clim
 #| fig-height: 12
@@ -186,7 +201,7 @@ p <- ggplot(county_month , aes(n, month)) +
 ggplotly(p)
 ```
 
-### Figure X
+### Figure 2
 ```{r}
 #| label: fig-temp-avg-comp
 #| fig-height: 8
@@ -208,7 +223,7 @@ ggplotly(p)
 ```
 
 
-### Figure x
+### Figure 3
 ```{r}
 #| label: fig-temp-n-obs
 #| fig-height: 8
@@ -224,23 +239,40 @@ p <- ggplot(county, aes(n, county)) +
 ggplotly(p)
 ```
 
-### Figure 3
-```{r}
-#| label: fig-temp-user
-#| fig-cap: Mean +/- three standard deviations, based on historical data.
-#| fig-height: 8
-
-# p <- ggplot(user_thresh, aes(mean, county)) +
-#   geom_point(size = 4) +
-#   geom_errorbar(
-#     aes(xmin = user_min, xmax = user_max), width = 0
-#   ) +
-#   scale_y_discrete(name = "", limits = rev) +
-#   scale_x_continuous("Temperature (degree C)")
-# 
-# ggplotly(p)
-```
 :::
+
+```{r, export-thresholds}
+thresh_out <- gr_thresholds %>% 
+  filter(variable == "temperature_degree_c") %>% 
+  select(-url) %>% 
+  mutate(county = NA) %>%  
+  bind_rows(
+    user_thresh %>% 
+      select(county, variable, user_min, user_max) %>% 
+      mutate(sensor_type = NA)
+  ) %>% 
+  pivot_longer(
+    cols = c("sensor_min", "sensor_max", "user_min", "user_max"),
+    names_to = "threshold", values_to = "threshold_value"
+  ) %>% 
+  filter(!is.na(threshold_value))
+
+write_csv(thresh_out, here("output/temp_grossrange.csv"))
+
+write_csv(
+  thresh_out, 
+  "C:/Users/Danielle Dempsey/Desktop/RProjects/Packages/qaqcmar/data-raw/temp_grossrange.csv")
+
+```
+
+# Climatology
+
+The Climatology Test is a variation of the Gross Range Test (QARTOD ref here) that accounts for seasonal variability. There is no [Fail]{style="color: #DB4325;"} flag associated with this test for temperature, salinity, or dissolved oxygen due to the dynamic nature of these variables (Temp/Salinity and DO QARTOD manuals). However, observations that are seasonal outliers are assigned the  flag [Suspect/Of Interest]{style="color: #EDA247;"}.
+
+The seasonal time period (e.g., monthly, seasonally, other) and associated thresholds are defined by the user. Following the [OOI Biogeochemical Sensor Data: Best Practices & User Guide](https://docs.google.com/document/d/19pS5V1hsKAcSaGjwfmyrmZRIJFMXNAc4B0Uo9Akvmd4/edit#heading=h.u87btnaapb66), seasons were defined based on the calendar month, and the thresholds were based on historical data.
+
+
+
 
 
 
@@ -249,3 +281,8 @@ ggplotly(p)
 # References
 
 https://docs.google.com/document/d/19pS5V1hsKAcSaGjwfmyrmZRIJFMXNAc4B0Uo9Akvmd4/edit#
+
+QARTOD docs
+
+`r knitr::knit_exit()`
+
