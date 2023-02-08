@@ -21,14 +21,15 @@ library(plotly)
 library(quarto)
 library(RColorBrewer)
 library(readr)
+library(tidyr)
 
 theme_set(theme_light())
 
 dt_options <- list(
       dom = 'ft',
       paging = FALSE,
-      searching = FALSE,
-     # scrollY = "500px",
+      searching = TRUE,
+      scrollY = "550px",
       pageLength = 500,
       columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
@@ -39,30 +40,67 @@ dat <- read_csv(
 ) %>% 
   filter(variable == "Temperature")
 
+# gross range thresholds (sensors)
 gr_thresholds <- read_csv(
   here("data/grossrange_thresholds.csv"), show_col_types = FALSE
 )
 
+# station locations
+st_locations <- read_csv(
+  here("data/Station_Locations_2022-12-06.csv"), show_col_types = FALSE
+)
+
 ```
 
-# Thresholds
+# Quality Control Tests
 
-**DRAFT February 3, 2023**
+**DRAFT February 8, 2023**
 
-- Intro text about QARTOD tests.
-- Table (with links?) of the tests we are applying
-- Table of flag values 
-  - [Pass]{style="color: #009200;"}
-  - [Not Evaluated]{style="color: #E6E1BC;"}
-  - [Suspect/Of Interest]{style="color: #EDA247;"}
-  - [Fail]{style="color: #DB4325;"}
-  - [Missing Data]{style="color: #5A5A5A;"}
-- Need to select thresholds for each test
+To ensure high-quality data products, the Centre for Marine Applied Research applies automated and "human in the loop" quality control (QC) processes to the Coastal Monitoring Program data.
 
-We based thresholds off historical data.
+An automated QC test is an algorithm that evaluates each data record and assigns a flag to the record indicating the test results. These flags are typically reviewed by human experts, which is referred to as "human in the loop" QC. End users can then filter the data set for records that meet their quality criteria [@RN26831].
 
-The historical data used here was the Coastal Monitoring Program Water Quality data sets submitted to the [Nova Scotia Open Data Portal](https://data.novascotia.ca/browse?q=coastal%20monitoring&sortBy=relevance) in December 2022. Preliminary quality control measures (e.g., obvious outliers and suspected biofouling removed) were applied to these datasets before submission. Additionally, freshwater and other outlier stations were excluded from the threshold analysis to provide a better representation of "normal" conditions. 
+Numerous QC tests and flagging schemes exist and have been applied to oceanographic data sets [e.g., Appendix A in @RN26831; @RN24412; OOI ref as example of different tests]. CMAR has adopted the well-known QARTOD tests and flagging scheme, which is applied by the U.S. Integrated Ocean Observing System (IOOS) and other ocean observing entities [see Table 1 of @RN25921].
 
+QARTOD stands for the "Quality Assurance / Quality Control of Real-Time Oceanographic Data". It is a project that grew from a 2003 grassroots effort to develop guidelines for high-quality oceanographic data. From 2012 to 2019, QARTOD developed 13 Quality Control manuals covering 14 ocean variables, plus additional supporting materials [@RN25921]. Each QC manual is subjected to three iterations of formal review by subject-matter experts, with the final round soliciting international reviews. Published manuals are updated as needed to reflect new technology, additional knowledge, or growth of the Project [@RN25921].
+
+The QARTOD flag scheme has 5 levels, as described in Table 1. 
+
+ Table 1: QARTOD flag scheme ([@RN25922]).
+
+| **Flag**                       | **Description**                                                                                                                                                                      |
+|--------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [Pass - 1]{style="color: #009200;"}                       | [Data have passed critical real-time quality control tests and are deemed adequate for use as preliminary data.]{style="color: #009200;"}                                                                       |
+| [Not evaluated - 2]{style="color: #c4c1a5;"}              | [Data have not been QC-tested, or the information on quality is not available.]{style="color: #c4c1a5;"}                                                                                                        |
+| [Suspect or Of High Interest- 3]{style="color: #EDA247;"} | [Data are considered to be either suspect or of high interest to data providers and users. They are flagged suspect to draw further attention to them by operators.]{style="color: #EDA247;"}                   |
+| [Fail - 4]{style="color: #DB4325;"}                       | [Data are considered to have failed one or more critical real-time QC checks. If they are disseminated at all, it should be readily apparent that they are not of acceptable quality.]{style="color: #DB4325;"} |
+| [Missing data - 9]{style="color: #5A5A5A;"}               | [Data are missing; used as a placeholder.]{style="color: #5A5A5A;"}                                                     |
+
+QARTOD manuals define QC tests for each variable. The tests are grouped into three categories: Required, Strongly Recommended, and Suggested. The Required tests provide the minimum level of QC, and should be easy to implement. However, it is recognized that there are circumstances where these tests are not applicable [@RN25922]. Codable instructions are included with the description of each test to facilitate implementation of automated data checking [@RN25921].
+
+QARTOD manuals focus on QC of real-time data (e.g., minimal delay from when data are recorded to when they are ready for use; however, it is acknowledged that other data may  benefit from QARTOD QC ([@RN25922]). The CMAR Coastal Monitoring Program Water Quality Data is not processed in real-time. Instead, data is logged by individual sensors, and typically offloaded for processing every 6 - 12 months. Some QARTOD tests were therefore not applicable to this data, and it was necessary and / or advantageous to modify some of the tests to reflect the nature of the data processing. 
+
+QC tests require thresholds that determine the results of the test. For example, records greater than the maximum value that can be recorded by a sensor should fail a simple maximum value test. Choosing appropriate thresholds for each test and variable is a key part of the QC effort. The operator (data provider) is responsible for selecting thresholds for QARTOD tests.  
+
+
+
+
+-   Meant for Real-Time data, but modified for our Coastal Monitoring Program data
+-   Some definitions
+    -   Flag, test, observation/record
+-   Table (with links?) of the tests we are applying
+
+
+
+
+
+`r knitr::knit_exit()`         
+Where possible, we based thresholds off historical data to get an idea of "normal" conditions.
+
+The historical data used here was the Coastal Monitoring Program Water Quality data sets submitted to the [Nova Scotia Open Data Portal](https://data.novascotia.ca/browse?q=coastal%20monitoring&sortBy=relevance) in December 2022. Preliminary quality control measures (e.g., obvious outliers and suspected biofouling removed) were applied to these datasets before submission. Additionally, freshwater and other outlier stations were excluded from the threshold analysis to provide a better representation of "normal" conditions.
+
+-   Better for some counties/variables/thresholds than others.
+-   exercise should be repeated in a few years.
 
 # Gross Range
 
@@ -80,20 +118,13 @@ $$
 user_{max} = avg_{var} + 3 * stdev_{var}
 $$ {#eq-user-max}
 
-where $avg_{var}$ is the overall or "gross" average of the variable of interest, and
-$stdev_{var}$ is the standard deviation of the variable of interest. 
-
-The historical data used here was the Coastal Monitoring Program Water Quality data sets submitted to the [Nova Scotia Open Data Portal](https://data.novascotia.ca/browse?q=coastal%20monitoring&sortBy=relevance) in December 2022. Preliminary quality control measures (e.g., obvious outliers and suspected biofouling removed) were applied to these datasets before submission. Additionally, freshwater and other outlier stations were excluded from the threshold analysis to provide a better representation of "normal" conditions. 
-
-
-- exercise should be repeated in a few years.
+where $avg_{var}$ is the overall or "gross" average of the variable of interest, and $stdev_{var}$ is the standard deviation of the variable of interest.
 
 More detail on how these thresholds were selected for each variable is provided below.
 
-
 ## Temperature
 
-### Sensor threholds
+### Sensor Threholds
 
 The sensor thresholds were determined based on the associated manual (Table 1).
 
@@ -102,16 +133,23 @@ gr_thresholds %>%
   filter(variable == "temperature_degree_c") %>%
   mutate(
     `Sensor (link to spec sheet)` = 
-      paste0('<a  target=_blank href=', url, '>', sensor_type,'</a>') 
+      paste0('<a  target=_blank href=', url, '>', sensor_type,'</a>')
   ) %>% 
-  select( `Sensor (link to spec sheet)`, sensor_min, sensor_max ) %>% 
+  select( `Sensor (link to spec sheet)`, sensor_min, sensor_max ) %>%
   datatable(
-    options = dt_options, rownames = FALSE, escape = FALSE,
+    dt_options <- list(
+      dom = 'ft',
+      searching = FALSE,
+      paging = FALSE,
+      pageLength = 500,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), 
+    rownames = FALSE, escape = FALSE,
     caption = "Table 1: Temperature gross range thresholds as determined by sensor specifications."
   )
 ```
 
-### User thresholds
+### User Thresholds
 
 User thresholds were calculated separately for each county (Table 2).
 
@@ -119,7 +157,7 @@ For most counties, the overall average temperature (all year, depths, stations) 
 
 To give each month equal weight regardless of the number of observations collected, the user thresholds were based on the monthly climatology.
 
-All temperature observations were first grouped by calendar month, and the average temperature for each month was calculated. The $avg_{Temp}$ was the average of these monthly values, and $stdev_{Temp}$ was the standard deviation of the monthly values (@eq-temp-avg, @eq-temp-stdev).
+All temperature observations were first grouped by calendar month, and the average temperature for each month was calculated. The $avg_{Temp}$ was the average of these monthly averages, and $stdev_{Temp}$ was the standard deviation of the monthly averages (@eq-temp-avg, @eq-temp-stdev).
 
 $$
 avg_{temp} = sum(avg_{Jan} + avg_{Feb} + ... avg_{Dec}) / 12
@@ -128,7 +166,6 @@ $$ {#eq-temp-avg}
 $$
 stdev_{temp} = sd(avg_{Jan}, avg_{Feb}, ... avg_{Dec})
 $$ {#eq-temp-stdev}
-
 
 ```{r}
 # calculate thresholds based on the climatology
@@ -153,22 +190,29 @@ user_thresh <- dat %>%
 user_thresh %>% 
   select(county, user_min, user_max) %>% 
   datatable(
-    options = dt_options, rownames = FALSE,
-    caption = "Table 2: Temperature user thresholds based on historical data."
+    dt_options <- list(
+      dom = 'ft',
+      searching = FALSE,
+      paging = FALSE,
+      pageLength = 500,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), 
+    rownames = FALSE,
+    caption = "Table 2: Temperature user thresholds for the Gross Range Test based on historical data."
   )
 ```
 
-
 #### Considerations
-The quality[^1] of these user thresholds may vary by county, depending on the number and distribution (in space and time) of observations. For example, there are relatively few observations for some counties compared to others (@fig-temp-n-obs). Cape Breton has the fewest observations at ~30,000 over 3 years and two stations, while Guysborough has the most at nearly 1 million over 7 years and 35 stations. For consistency, the counties with fewer observations were not pooled with counties with more observations, although this may be a future task. Otherwise, the user thresholds for counties with less data should be re-evaluated when more observations are collected.
+
+The quality[^1] of these user thresholds may vary by county, depending on the number and distribution (in space and time) of observations. For example, there are relatively few observations for some counties compared to others (@fig-temp-n-obs). Cape Breton has the fewest observations at \~30,000 over 3 years and two stations, while Guysborough has the most at nearly 1 million over 7 years and 35 stations (@fig-temp-station-locations). For consistency, the counties with fewer observations were not pooled with counties with more observations, although this may be a future task. Otherwise, the user thresholds for counties with less data should be re-evaluated when more observations are collected.
+
+[^1]: e.g., how representative the thresholds are of "normal" conditions through the water column and county
 
 Calculating thresholds at the county scale provides relatively coarse threshold values. Ideally, these would be resolved by depth and a smaller spatial scale (e.g., waterbody or station). However, calculating thresholds for each county and depth provides its own challenges. For example, the data become very patchy when grouped by county, depth, and month (e.g., 169 month-county-depth combinations with 0 observations). Additionally, the same depth can represent a different part of the water column for different stations. For example, at the Barren Island station in Guysborough county, the 15 m sensor is near the bottom. In contrast, 15 m is in the top 20 % of the water column at Tickle Island, also in Guysborough county. Finally, aggregating thresholds by county and depth would result in 141 user-defined temperature thresholds, which is more than the 2.5 person Data Governance team can reasonably manage.
 
-Because depth was not accounted for, it is expected that observations from very shallow sensors (e.g., <= 2 m) will be assigned the [Suspect/Of Interest]{style="color: #EDA247;"} flag, despite appearing reasonable in the context of the deployment. In this case, the flag should be interpreted as ["Of Interest"]{style="color: #EDA247;"}, for highlighting a relatively warm observation.
+Because depth was not accounted for, it is expected that observations from very shallow sensors (e.g., \<= 2 m) will be assigned the [Suspect/Of Interest]{style="color: #EDA247;"} flag, despite appearing reasonable in the context of the deployment. In this case, the flag should be interpreted as ["Of Interest"]{style="color: #EDA247;"}, for highlighting a relatively warm observation.
 
-The user_min threshold is typically << 0 degrees Celsius (Table 2), and is therefore not expected to flag any observations. For most counties (all except Annapolis, Queens, Shelburne, and Digby), the user_min is less than the sensor_min for the aquameasure and vr2ar sensors. In this case, any observations less than the sensor_min would [fail]{style="color: #DB4325;"} the gross range test (i.e., the user_min would be ignored). It may be useful for other users to apply their own user_min threshold to the data to highlight cold observations that are [Suspect/Of Interest]{style="color: #EDA247;"}. For example, those interested in salmonid aquaculture may wish to flag observations at or near the superchill threshold (user_min = -0.7 degree C).
-
-## Suporting Figures
+The user_min threshold is typically \<\< 0 degrees Celsius (Table 2), and is therefore not expected to flag any observations. For most counties (all except Annapolis, Queens, Shelburne, and Digby), the user_min is less than the sensor_min for the aquameasure and vr2ar sensors. In this case, any observations less than the sensor_min would [fail]{style="color: #DB4325;"} the gross range test (i.e., the user_min would be ignored). It may be useful for other users to apply their own user_min threshold to the data to highlight cold observations that are [Suspect/Of Interest]{style="color: #EDA247;"}. For example, those interested in salmonid aquaculture may wish to flag observations at or near the superchill threshold (user_min = -0.7 degree C).
 
 ```{r}
 county <- dat %>% 
@@ -182,8 +226,8 @@ county_month <- dat %>%
 ```
 
 ::: panel-tabset
-
 ### Figure 1
+
 ```{r}
 #| label: fig-temp-n-clim
 #| fig-height: 12
@@ -202,6 +246,7 @@ ggplotly(p)
 ```
 
 ### Figure 2
+
 ```{r}
 #| label: fig-temp-avg-comp
 #| fig-height: 8
@@ -222,8 +267,8 @@ p <- user_thresh %>%
 ggplotly(p)
 ```
 
-
 ### Figure 3
+
 ```{r}
 #| label: fig-temp-n-obs
 #| fig-height: 8
@@ -239,10 +284,235 @@ p <- ggplot(county, aes(n, county)) +
 ggplotly(p)
 ```
 
+### Figure 4
+
+```{r}
+#| label: fig-temp-station-locations
+#| fig-height: 7
+#| fig-cap: Approximate location of stations with temperature data. Marker size is proportional to the number of temperature observations within the county.
+
+# set up colour palette - need to interpolate with colorRampPalette
+n_col = length(unique(st_locations$COUNTY))
+getpal = colorRampPalette(brewer.pal(8, "Dark2"))
+pal <- colorFactor(getpal(n_col), domain = unique(st_locations$COUNTY))
+
+# join the station locations dataset with the number of obs from each station
+st_locations <- st_locations %>% 
+  rename(county = COUNTY, station = STATION) %>% 
+  inner_join(
+    dat %>% 
+      filter(group == "all_station", variable == "Temperature") %>% 
+      select(county, station, n),
+    by = c("county", "station") 
+  ) %>% 
+  group_by(county) %>% 
+  mutate(
+    n_tot = sum(n),
+    n_prop = round(n / sum(n), digits = 2),
+    popup = paste(county, station, n_prop, sep = "</br>")
+  ) 
+
+# interactive map
+leaflet(st_locations) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addCircleMarkers(
+    lng = ~LONGITUDE, lat = ~LATITUDE, weight = 1,
+    radius = ~n_prop * 25,
+    color = ~pal(county),
+    fillColor =  ~pal(county),
+    popup = ~popup,
+    fillOpacity = 0.5
+  )
+```
 :::
 
+# Climatology
+
+The Climatology Test is a variation of the Gross Range Test (QARTOD ref here) that accounts for seasonal variability. There is no [Fail]{style="color: #DB4325;"} flag associated with this test for temperature, salinity, or dissolved oxygen due to the dynamic nature of these variables (Temp/Salinity and DO QARTOD manuals). However, observations that are seasonal outliers are assigned the flag [Suspect/Of Interest]{style="color: #EDA247;"}.
+
+The seasonal time period (e.g., monthly, seasonally, other) and associated thresholds are defined by the user. Following the [OOI Biogeochemical Sensor Data: Best Practices & User Guide](https://docs.google.com/document/d/19pS5V1hsKAcSaGjwfmyrmZRIJFMXNAc4B0Uo9Akvmd4/edit#heading=h.u87btnaapb66), seasons were defined based on the calendar month, and the thresholds were based on historical data. The monthly thresholds were defined similar to the Gross Range Test:
+
+$$
+season_{min} = avg_{season} - 3 * stdev_{season}  
+$$ {#eq-season-min}
+
+$$
+season_{max} = avg_{season} + 3 * stdev_{season}  
+$$ {#eq-season-max}
+
+The $avg_{season}$ was calculated as the average of all observations for a given month, and $stdev_{season}$ was the associated standard deviation. Note that OOI used a more complex method (harmonic analysis, as described [here](https://github.com/oceanobservatories/qc-lookup)) to estimate $avg_{season}$ to account for spurious values. This was beyond the current scope of the CMAR Coastal Monitoring Program, but could be applied in future iterations of this threshold analysis.
+
+## Temperature
+
+Monthly temperature thresholds were calculated separately for each county (@fig-temp-climatology; Table 3).
+
+```{r}
+county_month <- dat %>% 
+  filter(group == "county_month") %>% 
+  mutate(month = month(month, label = TRUE)) %>% 
+  select(-c(variable, units, group, year, station, depth))
+```
+
+::: panel-tabset
+### Figure 5
+
+```{r}
+#| label: fig-temp-climatology
+#| fig-height: 10
+#| fig-cap: The mean and standard deviation of temperature in each county.
+
+p <- ggplot(county_month , aes(month, mean)) +
+  geom_point(size = 1) +
+  geom_errorbar(
+    aes(ymin = mean - stdev, ymax = mean + stdev), width = 0
+  ) +
+  scale_x_discrete(
+    name = "", breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")
+  ) +
+  scale_y_continuous("Temperature (mean +/- standard deviation)") +
+  facet_wrap(~county, ncol = 3) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Table 3
+
+```{r}
+clim_out <- county_month %>% 
+  mutate(
+    season_min = round((mean - 3 * stdev), digits = 3),
+    season_max = round((mean + 3 * stdev), digits = 3)
+  ) %>% 
+  select(county, month, season_min, season_max) %>% 
+  #select(county, month, mean, stdev, season_min, season_max) %>% 
+  arrange(county, month)  
+
+datatable(
+  clim_out, 
+  options = dt_options, rownames = FALSE,
+  caption = "Temperature thresholds for the Climatology Test based on historical data."
+)
+```
+:::
+
+### Considerations
+
+The quality[^2] of these thresholds may vary by county and month, depending on the number and distribution (in space and time) of observations. There were no county-month groups with zero observations, although some groups had relatively few observations for many or all months (@fig-temp-n-clim; e.g., Cape Breton).
+
+[^2]: e.g., how representative the thresholds are of "normal" conditions through the water column and county
+
+The length of the time series varied among counties, from \~ 1 year (e.g., Cape Breton, Colchester) to over 7 years (select stations in Guysborough, Richmond, and Yarmouth counties; @fig-temp-n-years). This means that the monthly average for some county-month groups is based on only 1 year of data. Additionally, the number of stations varied by county, from a single station each in Colchester and Queens counties, to 34 stations in Guysborough (@fig-temp-station-locations).
+
+The seasonal thresholds for counties with limited years, number of observations, and/or number of stations are likely not representative of inter-annual or spatial variability in the county; however, they are adequate for this quality control exercise. These thresholds *are* representative of "normal" conditions of the deployments(, and so egregious observations are expected to be flagged). If new deployments are added to these counties, it is recommended that the seasonal thresholds be re-evaluated and re-calculated if necessary. It is strongly recommended that all seasonal thresholds be re-calculated after several more years of data have been collected through the Coastal Monitoring Program.
+
+The seasonal thresholds were not resolved by depth. This means that there was high standard deviation for counties with seasonal stratification, particularly in the summer months when stratification is typically the strongest (@fig-temp-stdev).
+
+The standard deviations for July through October in Inverness are the four highest overall standard deviations (Table 3; @fig-temp-stdev). This high variability was driven by three deployments in Whycocomagh Basin in the Bras D'Or Lakes:
+
+-   Deep Basin (May to September 2018)
+-   0814x East and 0814x West (September to December 2020)
+
+These stations had sensors deployed above and below the thermocline. Temperatures below the thermocline, near the bottom, were typically very cold (about zero degrees for the whole Deep Basine deployment). Temperatures above the thermocline, closer to the surface, were typically much warmer, up to 25 degrees C in the summer (link to Inverness report here). The high standard deviation results in a very wide range of temperature values that would be flagged [Pass]{style="color: #009200;"}: e.g., from -11.14 degrees C to 36.58 degrees C in August.
+
+The temperatures below the thermocline could be considered anomalous and removed prior to calculating the thresholds. These temperatures would then be flagged [Of Interest]{style="color: #EDA247;"}. However, the temperatures were included in the current thresholds analysis for several reasons:
+
+1.  Together, these three deployments represent 68 % of the Inverness temperature observations (those from below the thermocline represents 30 % of the county observations).
+2.  Consistency with the threshold calculation for other counties (e.g., depth was not accounted for).
+3.  It is not [suspicious]{style="color: #EDA247;"} for these temperatures to be so cold in this region of Whycocomagh Basin.
+
+There are stations withe notable depth stratification in other counties, including Guysborough, Halifax, and Lunenburg. This is reflected in the relatively high standard deviation in the summer months for these counties (@fig-temp-stdev). Future iterations of this threshold analysis could consider resolving the seasonal thresholds by depth; however it is beyond the scope of this preliminary exercise.
+
+::: panel-tabset
+### Figure 6
+
+```{r}
+#| label: fig-temp-n-years
+#| fig-height: 10
+#| fig-cap: The mean and standard deviation of temperature in each county.
+#| message: false
+
+p <- dat %>% 
+  filter(group == "county_month_year") %>% 
+  select(county, year, month, n) %>% 
+  arrange(county, year, month) %>% 
+  group_by(county, month) %>% 
+  summarise(n_year = n()) %>% 
+  ggplot(aes(n_year, month(month, label = TRUE))) +
+  geom_col() +
+  scale_x_continuous("Number of Years") +
+  scale_y_discrete(name = "", limits = rev) +
+  facet_wrap(~county) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 7
+
+```{r}
+#| label: fig-temp-stdev
+#| fig-height: 9
+#| fig-cap: The standard deviation of temperature for each calendar month in each county. The shaded yellow region indicates "summer" months (June, July, August, and September). The red bar indicates the highest standard deviation for each county.
+
+county_month %>% 
+  group_by(county) %>% 
+  mutate(
+    max_stdev = max(stdev),
+    max_stdev = if_else(max_stdev == stdev, 1, 0)
+  ) %>% 
+  # ggplot(aes(month, stdev, fill = factor(max_stdev))) +
+  #   geom_col() + # need to put this here or the months are displayed alphabetically
+  #   scale_fill_manual(values = c("#8DD3C7", "#FB8072")) +
+  #   annotate(
+  #     "rect", xmin = 5.5, xmax = 9.5, ymin = -Inf,  ymax = Inf,
+  #     col = "#FFFF8A", fill = "#FFFF8A", alpha = 0.5
+  #   ) +
+  #   geom_col() +
+  #   scale_x_discrete(
+  #     "Month", 
+  #     breaks = c("Jan", "Mar", "May", "Jul", "Sep", "Nov")
+#   ) +
+#   scale_y_continuous(
+#     "Standard Deviation (degrees C)",
+#     expand = expansion(mult = c(0, .1))
+#   ) +
+#   facet_wrap(~county, ncol = 3) +
+#   theme(legend.position = "none")
+
+# #ggplotly(p)
+ggplot(aes(stdev, month, fill = factor(max_stdev))) +
+  geom_col() + # need to put this here or the months are displayed alphabetically
+  scale_fill_manual(values = c("#8DD3C7", "#FB8072")) +
+  annotate(
+    "rect", ymin = 3.5, ymax = 7.5, xmin = -Inf,  xmax = Inf,
+    col = "#FFFF8A", fill = "#FFFF8A", alpha = 0.5
+  ) +
+  geom_col() +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous(
+    "Standard Deviation (degrees C)",
+    expand = expansion(mult = c(0, .1))
+  ) +
+  facet_wrap(~county) +
+  theme(legend.position = "none")
+
+#ggplotly(p)
+```
+:::
+
+# References
+
+https://docs.google.com/document/d/19pS5V1hsKAcSaGjwfmyrmZRIJFMXNAc4B0Uo9Akvmd4/edit#
+
+QARTOD docs (temp + sal, DO)
+
+`r knitr::knit_exit()`
+
 ```{r, export-thresholds}
-thresh_out <- gr_thresholds %>% 
+
+# gross range
+gr_out <- gr_thresholds %>% 
   filter(variable == "temperature_degree_c") %>% 
   select(-url) %>% 
   mutate(county = NA) %>%  
@@ -257,32 +527,24 @@ thresh_out <- gr_thresholds %>%
   ) %>% 
   filter(!is.na(threshold_value))
 
-write_csv(thresh_out, here("output/temp_grossrange.csv"))
+write_csv(gr_out, here("output/temp_grossrange.csv"))
 
 write_csv(
-  thresh_out, 
+  gr_out,
   "C:/Users/Danielle Dempsey/Desktop/RProjects/Packages/qaqcmar/data-raw/temp_grossrange.csv")
+
+# climatology
+write_csv(clim_out, here("output/temp_climatology.csv"))
+
+write_csv(
+  clim_out,
+  "C:/Users/Danielle Dempsey/Desktop/RProjects/Packages/qaqcmar/data-raw/temp_climatology.csv")
 
 ```
 
-# Climatology
-
-The Climatology Test is a variation of the Gross Range Test (QARTOD ref here) that accounts for seasonal variability. There is no [Fail]{style="color: #DB4325;"} flag associated with this test for temperature, salinity, or dissolved oxygen due to the dynamic nature of these variables (Temp/Salinity and DO QARTOD manuals). However, observations that are seasonal outliers are assigned the  flag [Suspect/Of Interest]{style="color: #EDA247;"}.
-
-The seasonal time period (e.g., monthly, seasonally, other) and associated thresholds are defined by the user. Following the [OOI Biogeochemical Sensor Data: Best Practices & User Guide](https://docs.google.com/document/d/19pS5V1hsKAcSaGjwfmyrmZRIJFMXNAc4B0Uo9Akvmd4/edit#heading=h.u87btnaapb66), seasons were defined based on the calendar month, and the thresholds were based on historical data.
-
-
-
-
-
-
-[^1]: e.g., how representative the thresholds are of "normal" conditions through the water column and county
-
-# References
-
-https://docs.google.com/document/d/19pS5V1hsKAcSaGjwfmyrmZRIJFMXNAc4B0Uo9Akvmd4/edit#
-
-QARTOD docs
-
-`r knitr::knit_exit()`
-
+-   Flag Colours
+    -   [Pass]{style="color: #009200;"}
+    -   [Not Evaluated]{style="color: #c4c1a5;"}
+    -   [Suspect/Of Interest]{style="color: #EDA247;"}
+    -   [Fail]{style="color: #DB4325;"}
+    -   [Missing Data]{style="color: #5A5A5A;"}
