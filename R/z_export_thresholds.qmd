@@ -52,8 +52,8 @@ gr_thresholds <- read_csv(
 st_locations <- read_csv(
   here("data/Station_Locations_2022-12-06.csv"), show_col_types = FALSE
 )
-
 ```
+
 **DRAFT February 8, 2023**
 
 # Quality Control Tests
@@ -229,7 +229,7 @@ For most counties, the overall average temperature (all year, depths, stations) 
 
 To give each month equal weight regardless of the number of observations collected, the user thresholds were based on the monthly climatology.
 
-All temperature observations were first grouped by calendar month, and the average temperature for each month was calculated. The $avg_{Temp}$ was the average of these monthly averages, and $stdev_{Temp}$ was the standard deviation of the monthly averages (@eq-temp-avg, @eq-temp-stdev).
+All temperature observations were first grouped by calendar month, and the average temperature for each month was calculated. The $avg_{Temp}$ was the average of these monthly averages, and $stdev_{Temp}$ was the standard deviation of the monthly averages (@eq-temp-avg, @eq-temp-stdev). **Assume that the different number of days is negligible (ie., not giving too much weight to February**
 
 $$
 avg_{temp} = sum(avg_{Jan} + avg_{Feb} + ... avg_{Dec}) / 12
@@ -386,7 +386,7 @@ ggplotly(p)
 ### Table 4
 
 ```{r}
-clim_out <- county_month %>% 
+clim_thresholds <- county_month %>% 
   mutate(
     season_min = round((mean - 3 * stdev), digits = 3),
     season_max = round((mean + 3 * stdev), digits = 3)
@@ -396,7 +396,7 @@ clim_out <- county_month %>%
   arrange(county, month)  
 
 datatable(
-  clim_out, 
+  clim_thresholds, 
   options = dt_options, rownames = FALSE,
   caption = "Table 4: Temperature thresholds for the Climatology Test based on historical data."
 )
@@ -417,7 +417,7 @@ The standard deviations for July through October in Inverness are the four highe
 -   Deep Basin (May to September 2018)
 -   0814x East and 0814x West (September to December 2020)
 
-These stations had sensors deployed above and below the thermocline. Temperatures below the thermocline, near the bottom, were typically very cold (about zero degrees for the whole Deep Basine deployment). Temperatures above the thermocline, closer to the surface, were typically much warmer, up to 25 degrees C in the summer (link to Inverness report here). The high standard deviation results in a very wide range of temperature values that would be flagged [Pass]{style="color: #009200;"}: e.g., from -11.14 degrees C to 36.58 degrees C in August.
+These stations had sensors deployed above and below the thermocline. Temperatures below the thermocline, near the bottom, were typically very cold (about zero degrees for the whole Deep Basin deployment). Temperatures above the thermocline, closer to the surface, were typically much warmer, up to 25 degrees C in the summer (link to Inverness report here). The high standard deviation results in a very wide range of temperature values that would be flagged [Pass]{style="color: #009200;"}: e.g., from -11.14 degrees C to 36.58 degrees C in August.
 
 The temperatures below the thermocline could be considered anomalous and removed prior to calculating the thresholds. These temperatures would then be flagged [Of Interest]{style="color: #EDA247;"}. However, the temperatures were included in the current thresholds analysis for several reasons:
 
@@ -512,7 +512,7 @@ ggplot(aes(stdev, month, fill = factor(max_stdev))) +
 
 # gross range
 gr_out <- gr_thresholds %>% 
-  filter(variable == "temperature_degree_c") %>% 
+  #filter(variable == "temperature_degree_c") %>% 
   select(-url) %>% 
   mutate(county = NA) %>%  
   bind_rows(
@@ -524,20 +524,32 @@ gr_out <- gr_thresholds %>%
     cols = c("sensor_min", "sensor_max", "user_min", "user_max"),
     names_to = "threshold", values_to = "threshold_value"
   ) %>% 
-  filter(!is.na(threshold_value))
-
-write_csv(gr_out, here("output/temp_grossrange.csv"))
-
-write_csv(
-  gr_out,
-  "C:/Users/Danielle Dempsey/Desktop/RProjects/Packages/qaqcmar/data-raw/temp_grossrange.csv")
+  filter(!is.na(threshold_value)) %>% 
+  mutate(qc_test = "grossrange")
 
 # climatology
-write_csv(clim_out, here("output/temp_climatology.csv"))
+clim_out <- clim_thresholds %>% 
+  mutate(
+    qc_test = "climatology", 
+    variable = "temperature_degree_c",
+    month = as.numeric(month)
+    ) %>% 
+  pivot_longer(
+    cols = c("season_min", "season_max"),
+    names_to = "threshold", values_to = "threshold_value"
+  ) 
+  
+# combine and export
+threshold_tables <- gr_out %>% 
+  bind_rows(clim_out) %>% 
+  select(qc_test, variable, county, sensor_type, month, threshold, threshold_value)
+
+write_csv(threshold_tables, here("output/threshold_tables.csv"))
 
 write_csv(
-  clim_out,
-  "C:/Users/Danielle Dempsey/Desktop/RProjects/Packages/qaqcmar/data-raw/temp_climatology.csv")
+  threshold_tables, 
+  "C:/Users/Danielle Dempsey/Desktop/RProjects/Packages/qaqcmar/data-raw/threshold_tables.csv"
+)
 
 ```
 
