@@ -58,6 +58,8 @@ st_locations <- read_csv(
 
 # Quality Control Tests
 
+**Although it is beyond the OOI scope to produce their own analysis-ready data products for the BGC sensors, OOI does undertake initial data processing as well as some basic QA/QC.**
+
 To ensure high-quality data products, the Centre for Marine Applied Research applies automated and "human in the loop" quality control (QC) processes to the Coastal Monitoring Program data.
 
 An automated QC test is an algorithm that evaluates each data record and assigns a flag to the record indicating the test results. These flags are typically reviewed by human experts, which is referred to as "human in the loop" QC. End users can then filter the data set for records that meet their quality criteria [@RN26831].
@@ -82,7 +84,7 @@ QARTOD manuals define QC tests for the 14 variables. For each variable, the test
 
 QARTOD manuals focus on QC of real-time data (e.g., minimal delay from when data are recorded to when they are ready for use; however, it is acknowledged that other data may  benefit from QARTOD QC [@RN25922]. The CMAR Coastal Monitoring Program Water Quality Data is not processed in real-time. Instead, data is logged by individual sensors, and typically offloaded for processing every 6 - 12 months. Some QARTOD tests were therefore not applicable to this data, and it was necessary and / or advantageous to modify some of the tests to reflect the nature of the data processing. More detail on these changes is provided in the appropriate sections below.
 
-QC tests require thresholds that determine the results of the test. For example, records greater than the maximum value that can be recorded by a sensor should fail a simple maximum value test. Choosing appropriate thresholds for each test and variable is a key part of the QC effort. The operator (data provider) is responsible for selecting thresholds for QARTOD tests, and thresholds should be based on historical data when possible [@RN25922; @15382; add ooi].  
+QC tests require thresholds that determine the results of the test. For example, records greater than the maximum value that can be recorded by a sensor should fail a simple maximum value test. Choosing appropriate thresholds for each test and variable is a key part of the QC effort. The operator (data provider) is responsible for selecting thresholds for QARTOD tests, and thresholds should be based on historical data when possible [@RN25922; @RN15382; add ooi].  
 
 This document describes the tests applied for each variable, and the methods for selecting the most appropriate thresholds. Where possible, these thresholds were determined from historical data, which provide a baseline of "normal" and "outlying" conditions. The historical data used here was the Coastal Monitoring Program Water Quality data sets submitted to the [Nova Scotia Open Data Portal](https://data.novascotia.ca/browse?q=coastal%20monitoring&sortBy=relevance) in December 2022. Preliminary quality control measures (e.g., obvious outliers and suspected biofouling removed) were applied to these datasets before submission. Additionally, freshwater and other outlier stations were excluded from the threshold analysis to provide a better representation of "normal" conditions.
 
@@ -110,9 +112,13 @@ QC tests for temperature were adapted from "QARTOD Manual for Real-Time Quality 
 
 : QARTOD tests for temperature [@RN24432]. {#tbl-temp-tests}
 
-Not all of these tests were applied to the temperature data. The Test 1 and Test 2 are meant to identify gaps and syntax errors in real time so that the errors can be fixed and the record resume. They are therefore not applicable to the Coastal Monitoring data sets. The Suggest tests are beyond the capacity of the current Data Governance team, but could be implemented in the future.
+Not all of these tests were applied to the temperature data. The Test 1 and Test 2 are meant to identify gaps and syntax errors in real time so that the errors can be fixed and the record resume. They are therefore not applicable to the Coastal Monitoring Program data sets. The Suggested tests are beyond the capacity of the current Data Governance team, but could be implemented in the future.
 
 Temperature records for the threshold analysis were collected from `r length(na.omit(unique(dat$station)))` stations in `r length(na.omit(unique(dat$county)))` counties (@fig-temp-station-locations). A large proportion of the records are from Guysborough county (37 %), while a very small proportion are from Cape Breton county (0.1 %) (@fig-temp-n-obs).
+
+**show ALL temperature stations and then those that were used for the analysis - maybe as different layers**
+
+**add climatology vs. user threshold plot**
 
 ::: panel-tabset
 
@@ -227,9 +233,10 @@ User thresholds were calculated separately for each county (Table 4).
 
 For most counties, the overall average temperature (all year, depths, stations) was substantially influenced by the number of observations in each month (@fig-temp-n-clim, @fig-temp-avg-comp).
 
-To give each month equal weight regardless of the number of observations collected, the user thresholds were based on the monthly climatology.
+To give each month equal weight regardless of the number of observations collected, the user thresholds were based on the monthly climatology (it was assumed that the different number of days per month was negligible).
 
-All temperature observations were first grouped by calendar month, and the average temperature for each month was calculated. The $avg_{Temp}$ was the average of these monthly averages, and $stdev_{Temp}$ was the standard deviation of the monthly averages (@eq-temp-avg, @eq-temp-stdev). **Assume that the different number of days is negligible (ie., not giving too much weight to February**
+All temperature observations were first grouped by calendar month, and the average temperature for each month was calculated. The $avg_{Temp}$ was the average of these monthly averages, and $stdev_{Temp}$ was the standard deviation of the monthly averages (@eq-temp-avg, @eq-temp-stdev). With this approach, the mean for a given month will be weighted towards years with substantially more observations than other years for that month. Future iterations of this thresholds exercise could further standardize the data to account for this.
+
 
 $$
 avg_{temp} = sum(avg_{Jan} + avg_{Feb} + ... avg_{Dec}) / 12

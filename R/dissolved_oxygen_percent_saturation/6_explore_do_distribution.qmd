@@ -1,0 +1,421 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(quarto)
+library(RColorBrewer)
+library(readr)
+library(strings)
+
+theme_set(theme_light())
+
+dt_options <- list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = FALSE,
+     # scrollY = "500px",
+      pageLength = 500,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# all data
+dat_all <- import_strings_data(input_path = here("data-raw")) %>%
+  select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
+  filter(
+    VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation",
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(STATION == "Ram Island" &
+        TIMESTAMP > as_datetime("2021-10-10")
+      & TIMESTAMP < as_datetime("2021-11-15"))
+  ) %>%
+  mutate(
+    DEPTH = round(as.numeric(DEPTH)),
+    MONTH = month(TIMESTAMP),
+    YEAR = year(TIMESTAMP)
+  )
+```
+
+# EXPLORATORY ANALYSIS: DISSOLVED OXYGEN
+
+**DRAFT March 3, 2023**
+
+- Data submitted to the Open Data Portal in December 2022.
+
+- Preliminary QC was applied to the data.
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
+  - Fresh water and other "outlier" stations not considered.
+    - Piper Lake, Hourglass Lake, 0193 (Denas Pond), Sissiboo
+
+- Depth rounded to nearest whole number
+  - Results in depth of 0 m for 1042 and Sissiboo.
+
+- Dissolved Oxygen observations are patchier (in time and space) than temperature observations. Methods for determining thresholds for temperature may not be appropriate for Dissolved Oxygen.
+
+- Assuming the observations are normally distributed, we are aiming to flag on the order of ~ 0.3 % of observations (data points outside of the mean +/- 3 standard deviations). 
+
+- Let's look at the distribution of DO observations to help inform threshold selection.
+
+## All Data
+
+::: panel-tabset
+
+### Figure 1
+```{r}
+#| fig-cap: Histogram of all dissolved oxygen observations, coloured by depth.
+
+p <- dat_all %>%
+  ggplot(aes(VALUE, fill = factor(DEPTH))) +
+  geom_histogram(
+    aes(y = after_stat(100 * count / sum(count))),
+    binwidth = 2, col = "darkgrey"
+  ) +
+  scale_y_continuous("Percent of Observations") +
+  scale_x_continuous("Dissolved Oxygen (percent saturation)")
+
+p
+```
+
+### Figure 2
+```{r}
+#| fig-cap: Histogram of dissolved oxygen observations by county, coloured by depth.
+#| fig-height: 10
+
+p + facet_wrap(~COUNTY, ncol = 2, scales = "free_y")
+```
+
+### Table 1
+```{r}
+#| tbl-cap: Thresholds and percent of flagged observations based on all observations.
+
+dat_all %>%
+  summarise(
+    mean = mean(VALUE),
+    sd = sd(VALUE),
+    
+    percent_greater_120 = 100 * sum(VALUE > 120) / n(),
+    percent_less_80 = 100 * sum(VALUE < 80) / n(),
+    
+    thresh_high = mean + 3 * sd,
+    thresh_low = mean - 3 * sd, 
+
+    percent_greater = 100 * sum(VALUE > thresh_high) / n(),
+    percent_less = 100 * sum(VALUE < thresh_low) / n(),
+    percent_out = 100 * (sum(VALUE > thresh_high) + sum(VALUE < thresh_low)) / n()
+  ) %>% 
+  mutate(across(.fns =  round, digits = 2)) %>% 
+  t() %>% 
+  datatable(options = dt_options, colnames = c("metric", "value"))
+
+```
+
+:::
+
+- Sensors in Whycocomagh Basin near the oxycline were at 8, 18, 28, and 36 m
+  - The observations of 0 % are from 18 and 36 m
+- Sensor at 60 m was at Tickle Island, Guysborough county
+
+## Filter Out Inverness Data 
+
+```{r}
+# filter & facet
+dat <- dat_all %>%
+  filter(!(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36)))
+```
+
+::: panel-tabset
+
+### Figure 3
+```{r}
+#| fig-cap: Histogram of dissolved oxygen observations (Inverness outliers removed), coloured by depth.
+
+p <- ggplot(dat, aes(VALUE, fill = factor(DEPTH))) +
+  geom_histogram(
+    aes(y = 100 * after_stat(count / sum(count))),
+    binwidth = 2, col = "grey"
+  ) +
+  scale_y_continuous("Percent of Observations") +
+  scale_x_continuous("Dissolved Oxygen (percent saturation)")
+
+p
+```
+
+### Figure 4
+```{r}
+#| fig-height: 10
+
+p + facet_wrap(~COUNTY, ncol = 3, scales = "free_y")
+#ggplotly(p)
+```
+
+### Table 2
+```{r}
+user_thresh <- dat %>%
+  summarise(
+    mean = mean(VALUE),
+    sd = sd(VALUE),
+    
+    percent_greater_120 = 100 * sum(VALUE > 120) / n(),
+    percent_less_80 = 100 * sum(VALUE < 80) / n(),
+    
+    thresh_high = mean + 3 * sd,
+    thresh_low = mean - 3 * sd, 
+
+    percent_greater = 100 * sum(VALUE > thresh_high) / n(),
+    percent_less = 100 * sum(VALUE < thresh_low) / n(),
+    percent_out = 100 * (sum(VALUE > thresh_high) + sum(VALUE < thresh_low)) / n()
+  ) %>% 
+  mutate(across(.fns =  round, digits = 2)) #%>% 
+  
+user_thresh %>% 
+  t() %>% 
+  datatable(options = dt_options, colnames = c("metric", "value"))
+
+```
+:::
+
+- Note: these proportions do NOT include the Inverness data (which will be flagged)
+- add in another table so can compare apples to apples
+
+# Group by Month
+
+- Calculate monthly average 
+- Calculate overall average based on monthly average
+
+:::panel-tabset
+
+### Figure 5
+```{r}
+#| fig-height: 8
+#| fig-cap-location: top
+
+month_mean <- dat %>%
+  group_by(MONTH) %>% 
+  summarise(
+    month_mean = round(mean(VALUE), digits = 2),
+    month_sd = round(sd(VALUE), digits = 2),
+    
+    # climatology thresholds (NOT grossrange)
+    thresh_low = month_mean - 3 * month_sd,
+    thresh_high = month_mean + 3 * month_sd
+  ) %>% 
+  ungroup() 
+
+p <- ggplot(month_mean, aes(month(MONTH, label = TRUE), month_mean)) +
+  geom_point(size = 4) +
+  geom_errorbar(
+    aes(ymin = (month_mean - month_sd), ymax = (month_mean + month_sd)),
+    width = 0
+  ) +
+  scale_x_discrete("Month")
+
+ggplotly(p)
+
+```
+
+### Table 3
+```{r}
+# grossrange thresholds based on monthly data
+thresh_month <- dat %>%
+  group_by(MONTH) %>% 
+  summarise(month_mean = mean(VALUE)) %>% 
+  ungroup() %>% 
+  summarise(
+    mean = mean(month_mean),
+    sd = sd(month_mean),
+    thresh_high = mean  + 3 * sd,
+    thresh_low = mean  - 3 * sd
+  )
+
+dat %>% 
+  bind_cols(thresh_month) %>% 
+  summarise(
+    percent_greater = 100 * sum(VALUE  > thresh_high) / n(),
+    percent_less = 100 * sum(VALUE < thresh_low) / n(),
+    percent_out = 100 * (sum(VALUE > thresh_high) + sum(VALUE < thresh_low)) / n()
+  ) %>% 
+  bind_cols(thresh_month) %>% 
+  select(
+    mean, sd, thresh_low, thresh_high, percent_greater, percent_less, percent_out
+  ) %>% 
+  mutate(across(.fns = round, digits = 2)) %>% 
+  t() %>% 
+  datatable(options = dt_options, colnames = c("metric", "value"))
+
+```
+:::
+
+- Very limited variation --> tight thresholds
+- 16 % of observations flagged!
+- Mean of all observations is similar to the mean of the monthly means (Table 2, Table 3), but the standard deviation is 2.2 times small for the mean of the means
+
+# Climatology
+
+## 3 Standard Deviations
+
+:::panel-tabset
+
+### Figure 6
+```{r}
+#| fig-cap: Monly mean +/- 1 standard deviations. Purple shaded region indicates the climatology thresholds. Orange lines show the grossrange user thresholds.
+
+p <- ggplot(month_mean, aes(month(MONTH, label = TRUE), month_mean)) +
+  geom_ribbon(
+    aes(MONTH, ymin = thresh_low, ymax = thresh_high),
+    alpha = 0.25, fill = "#eabfff", col = "#d580ff", linewidth = 1.5
+  ) +
+  geom_point(size = 4, col = "grey20") +
+  geom_errorbar(
+    aes(ymin = month_mean - month_sd, ymax = month_mean + month_sd),
+    width = 0, col = "grey20"
+  ) +
+  geom_hline(
+    yintercept = c(user_thresh$thresh_low, user_thresh$thresh_high), 
+    col = "orange", linewidth = 1.5
+  ) +
+  scale_x_discrete("Month")
+
+ggplotly(p)
+
+```
+
+### Table 4
+```{r}
+month_mean %>% 
+  datatable(rownames = FALSE, options = dt_options)
+```
+
+
+### Table 5
+```{r}
+#| tbl-cap: Proportion of all observations flagged from the climatology test.
+
+dat %>%
+  left_join(month_mean, by = "MONTH") %>% 
+  summarise(
+    percent_greater = 100 * sum(VALUE  > thresh_high) / n(),
+    percent_less = 100 * sum(VALUE < thresh_low) / n(),
+    percent_out = 100 * (sum(VALUE > thresh_high) + sum(VALUE < thresh_low)) / n(),
+    n_out = sum(VALUE > thresh_high) + sum(VALUE < thresh_low)
+  ) %>% 
+  mutate(across(.fns = round, digits = 2)) %>% 
+  t() %>% 
+  datatable(options = dt_options, colnames = c("metric", "value"))
+```
+
+:::
+
+## 4 Standard Deviations
+
+```{r}
+month_mean_4sd <- dat %>%
+  group_by(MONTH) %>% 
+  summarise(
+    month_mean = round(mean(VALUE), digits = 2),
+    month_sd = round(sd(VALUE), digits = 2),
+    thresh_low = month_mean - 4 * month_sd,
+    thresh_high = month_mean + 4 * month_sd
+  ) %>% 
+  ungroup() 
+```
+
+:::panel-tabset
+
+### Figure 7
+```{r}
+#| fig-cap: Monly mean +/- 1 standard deviations. PUrple shaded region indicates the climatology thresholds. Orange lines show the grossrange user thresholds.
+
+p <- ggplot(month_mean_4sd, aes(month(MONTH, label = TRUE), month_mean)) +
+  geom_ribbon(
+    aes(MONTH, ymin = thresh_low, ymax = thresh_high),
+    alpha = 0.25, fill = "#eabfff", col = "#d580ff", linewidth = 1.5
+  ) +
+  geom_point(size = 4, col = "grey20") +
+  geom_errorbar(
+    aes(ymin = month_mean - month_sd, ymax = month_mean + month_sd),
+    width = 0, col = "grey20"
+  ) +
+  geom_hline(
+    yintercept = c(user_thresh$thresh_low, user_thresh$thresh_high), 
+    col = "orange", linewidth = 1.5
+  ) +
+  scale_x_discrete("Month")
+
+ggplotly(p)
+
+```
+
+### Table 5
+```{r}
+month_mean_4sd %>% 
+  datatable(rownames = FALSE, options = dt_options)
+```
+
+
+### Table 6
+```{r}
+#| tbl-cap: Proportion of all observations flagged from the climatology test.
+
+dat %>%
+  left_join(month_mean_4sd, by = "MONTH") %>% 
+  summarise(
+    percent_greater = 100 * sum(VALUE  > thresh_high) / n(),
+    percent_less = 100 * sum(VALUE < thresh_low) / n(),
+    percent_out = 100 * (sum(VALUE > thresh_high) + sum(VALUE < thresh_low)) / n(),
+    n_out = sum(VALUE > thresh_high) + sum(VALUE < thresh_low)
+  ) %>% 
+  mutate(across(.fns = round, digits = 2)) %>% 
+  t() %>% 
+  datatable(options = dt_options, colnames = c("metric", "value"))
+```
+
+:::
+
+
+
+
+
+
+```{r}
+# clim_thresh_table <- month_mean %>%   
+#   select(month = MONTH, season_min = thresh_low, season_max = thresh_high) %>% 
+#   mutate(variable = "dissolved_oxygen_percent_saturation")
+# 
+# write_csv(clim_thresh_table, here("data/do_climatology_thresholds.csv"))
+```
+
+```{r}
+# # include this for sd 3 and sd 4 AND for temperature
+# p <- ggplot(month_mean, aes(month(MONTH, label = TRUE), month_mean)) +
+#   geom_ribbon(
+#     aes(MONTH, ymin = thresh_low, ymax = thresh_high),
+#     alpha = 0.25, fill = "#eabfff", col = "#d580ff", linewidth = 1.5
+#     ) +
+#   geom_point(size = 4, col = "grey20") +
+#   geom_errorbar(
+#     aes(ymin = month_mean - month_sd, ymax = month_mean + month_sd),
+#     width = 0, col = "grey20"
+#   ) +
+#   geom_hline(yintercept = c(83.62, 123.7), col = "orange", linewidth = 1.5) +
+#   scale_x_discrete("Month")
+# 
+# p
+```
+
+
