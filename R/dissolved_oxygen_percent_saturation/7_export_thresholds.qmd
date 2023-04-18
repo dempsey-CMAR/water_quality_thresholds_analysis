@@ -43,19 +43,20 @@ dt_options <- list(
 # percent saturation data used for threshold analysis
 dat_sat <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
-  filter(
-    VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation",
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
-    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
-    !(STATION == "Ram Island" &
-        TIMESTAMP > as_datetime("2021-10-10")
-      & TIMESTAMP < as_datetime("2021-11-15"))
-  ) %>%
   mutate(
     COUNTY = if_else(STATION == "Sandy Cove St. Marys", "Digby", COUNTY),
     DEPTH = round(as.numeric(DEPTH)),
     MONTH = month(TIMESTAMP),
     YEAR = year(TIMESTAMP)
+  ) %>% 
+  filter(
+    VARIABLE == "Dissolved Oxygen", 
+    UNITS == "percent saturation",
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
+    !(STATION == "Ram Island" &
+        TIMESTAMP > as_datetime("2021-10-10")
+      & TIMESTAMP < as_datetime("2021-11-15"))
   )
 
 # summarized data - from same dataset imported in above
@@ -352,13 +353,11 @@ gr_thresholds %>%
   )
 ```
 
-
-
 ### User Thresholds
 
-User thresholds were determined separately for percent saturation ($DO_{\%saturation}$) and concentration ($DO_{concentration}$). Preliminary QC was applied to the DO observations prior to this analysis. Obvious outliers[^5] and suspected biofouling signals were removed, and data from freshwater and river stations were not considered. 
+User thresholds were determined separately for percent saturation ($DO_{\%saturation}$) and concentration ($DO_{concentration}$). **Preliminary QC was applied to the DO observations prior to this analysis. Obvious outliers[^5] and suspected biofouling signals were removed, and data from freshwater and river stations were not considered. **
 
-[^5]: e.g. data from Whycocomagh near or below the oxycline 
+[^5]: e.g. data from Whycocomagh near or below the oxycline - this actually goes for the whole document. Move up higher OR use ALL data for the above  figures
 
 
 #### Percent Saturation
@@ -379,6 +378,7 @@ county_gr <- county_month %>%
 
 A single set of user thresholds was determined for all counties because the DO records were relatively patchy in space and time (@fig-do-station-locations; @fig-do-n-obs-sat; @fig-do-n-obs-county-month), and because there was only minor variation between counties (@fig-do-county-mean). This analysis could be revisited and thresholds revised when there is more consistent data.
 
+**move this up**
 $DO_{\%saturation}$ data was collected from `r length(na.omit(unique(dat_sat$STATION)))` stations in `r length(na.omit(unique(dat_sat$COUNTY)))` counties (@fig-do-station-locations). A large proportion of these records are from Guysborough (25 %) and Shelburne (22 %) counties, while a small proportion are from Pictou (0.78 %) and Antigonish (0.58 %) (@fig-do-n-obs-sat). Five counties have only one station with DO data (@fig-do-station-locations). For most counties, there are fewer "good" records in the spring and summer months, when conditions are conducive to biofouling[^6], and several counties have no data for at least one month (@fig-do-n-obs-county-month).
 
 [^6]: e.g. more daylight
@@ -468,110 +468,223 @@ county_gr %>%
 ```
 :::
 
-The data from all counties was pooled together, and the mean and standard deviation were calculated for each month (@fig-do-mean-month). The variability within each month was relatively high, with standard deviations ranging from 4.67 % in March to 8.33 % in July (@tbl-mean-month). In contrast, there is limited variability *between* months, with a range of ~ 8 % and standard deviation of 3.03 %.
-
-This small standard deviation means that user thresholds calculated following the methods in Section XX would be very narrow (@fig-do-mean-month). For some months, these thresholds would flag values within one standard deviation of the monthly mean as [Suspect/Of Interest]{style="color: #EDA247;"} (@fig-do-mean-month). This would lead to many "false positive" flags, i.e., observations that are flagged as [Suspect/Of Interest]{style="color: #EDA247;"}, despite being within a reasonable range. To avoid these false positives, a different approach was used to inform the $DO_{\%saturation}$ user thresholds.
 
 
 
+The data from all counties was therefore pooled together, and potential $DO_{\%saturation}$ user thresholds were calculated following equation (x). Three grouping methods were used to identify an appropriate mean and standard deviation on which to base the thresholds (@tbl-thresh-comp). 
 
+First, the DO observations were grouped by calendar month to give equal weight to each month regardless of the number of observations (as described in section xx). The average DO for each month was calculated, and the $avg_{DO_{Sat}}$ and $stdev_{DO_{Sat}}$ were calculated from these values (). 
 
+Second, the DO observations were grouped by county to give equal weight to each county regardless of the number of observations. Similar to the above, the average DO for each county was calculated, and the $avg_{DO_{Sat}}$ and $stdev_{DO_{Sat}}$ were calculated from these values ().
+ 
+Finally, $avg_{DO_{Sat}}$ and $stdev_{DO_{Sat}}$ were calculated from all the observations. 
+
+The percent of observations flagged for each set of thresholds was used to inform the final choice of user thresholds (@fig-histogram).
+
+::: panel-tabset
+
+### Table
 ```{r}
-month <- dat_summary %>%
-  filter(group == "all_month", units == "percent saturation") %>% 
-  select(month, n, mean, stdev) %>% 
-  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev)
+#| label: tbl-thresh-comp
+#| tbl-cap: Summary statistics from three different methods of calculating the user thresholds. For "all data", the mean and stdev are calculated from all observations; for "month", the mean and stdev are based on the monthly means; for "county" the mean and stdev are based on the county means. user_min and user_max are the associated thresholds. percent_greater (percent_less) is the percent of observations used in the analysis that are greater (less) than user_max (user_min). percent_out is the percent of observations flagged.
 
-month_mean <- month %>% 
-  rename(month_mean = mean) %>% 
-  summarise(mean = mean(month_mean), stdev = sd(month_mean)) %>% 
-  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev)
+dat_summary_sat <- dat_summary %>% 
+  filter(units == "percent saturation")
+
+thresh_all <- dat_summary_sat %>% 
+  filter(group == "all_data") %>% 
+  select(mean, stdev) %>% 
+  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev) 
+
+thresh_month <- dat_summary_sat %>% 
+  filter(group == "all_month") %>% 
+  rename(mean_month = mean) %>% 
+  summarise(mean = mean(mean_month), stdev = sd(mean_month)) %>% 
+  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev) 
+
+thresh_county <- dat_summary_sat %>% 
+  filter(group == "county") %>% 
+  rename(mean_county = mean) %>% 
+  summarise(mean = mean(mean_county), stdev = sd(mean_county)) %>% 
+  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev) 
+
+
+thresh_summary <- dat_sat %>% 
+  bind_cols(thresh_all) %>% 
+  summarise(
+    percent_greater = 100 * sum(VALUE  > user_max) / n(),
+    percent_less = 100 * sum(VALUE < user_min) / n(),
+    percent_out = 100 * (sum(VALUE > user_max) + sum(VALUE < user_min)) / n()
+  ) %>% 
+  bind_cols(thresh_all) %>% 
+  select(
+    mean, stdev, user_min, user_max, percent_greater, percent_less, percent_out
+  ) %>%
+  mutate(group = "all data") %>% 
+  rbind(
+    dat_sat %>% 
+      bind_cols(thresh_month) %>% 
+      summarise(
+        percent_greater = 100 * sum(VALUE  > user_max) / n(),
+        percent_less = 100 * sum(VALUE < user_min) / n(),
+        percent_out = 100 * (sum(VALUE > user_max) + sum(VALUE < user_min)) / n()
+      ) %>% 
+      bind_cols(thresh_month) %>% 
+      select(
+        mean, stdev, user_min, user_max, percent_greater, percent_less, percent_out
+      ) %>%
+      mutate(group = "month")
+  ) %>% 
+  rbind(
+    dat_sat %>% 
+      bind_cols(thresh_county) %>% 
+      summarise(
+        percent_greater = 100 * sum(VALUE  > user_max) / n(),
+        percent_less = 100 * sum(VALUE < user_min) / n(),
+        percent_out = 100 * (sum(VALUE > user_max) + 
+                               sum(VALUE < user_min)) / n()
+      ) %>% 
+      bind_cols(thresh_county) %>% 
+      select(
+        mean, stdev, user_min, user_max, percent_greater, percent_less, percent_out
+      ) %>%
+      mutate(group = "county")
+  ) %>% 
+  mutate(across(where(is.numeric), ~round(., 2))) 
+
+rownames(thresh_summary) <- thresh_summary$group
+thresh_summary <- select(thresh_summary, -group)
+
+thresh_summary %>% 
+  t() %>% 
+  datatable(options = dt_options)
+
+```
+
+### Figure
+```{r}
+#| label: fig-histogram
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %; preliminary quality control applied). Observations flagged with the thresholds based on monthly data are highlighted in light orange and dark orange. Observations flagged using the thresholds based on ungrouped data are highlighted in dark orange.
+
+ggplot(dat_sat, aes(VALUE)) +
+  annotate(
+    "rect", fill = "#EDA247",
+    ymin = -Inf, ymax = Inf, alpha = 0.75,
+    xmin = -Inf, xmax = thresh_all$user_min
+  ) +
+  annotate(
+    "rect", fill = "#EDA247", alpha = 0.25,
+    ymin = -Inf, ymax = Inf,
+    xmin = thresh_all$user_min, xmax = thresh_month$user_min
+  ) +
+    annotate(
+    "rect", fill = "#EDA247",
+    ymin = -Inf, ymax = Inf, alpha = 0.75,
+    xmin = Inf, xmax = thresh_all$user_max
+  ) +
+  annotate(
+    "rect", fill = "#EDA247", alpha = 0.25,
+    ymin = -Inf, ymax = Inf,
+    xmin = thresh_month$user_max, xmax = thresh_all$user_max
+  ) +
+  
+  geom_histogram(
+    aes(y = 100 * after_stat(count / sum(count))),
+    binwidth = 2, col = "grey10", fill = "#B0E0E6"
+  ) +
+  geom_hline(yintercept = 0, colour = "grey10") +
+  scale_y_continuous("Percent of Observations", expand = expansion(mult = c(0, 0.1))) +
+  scale_x_continuous("Dissolved Oxygen (percent saturation)") +
+  theme(
+    panel.grid = element_blank(), 
+    panel.border = element_rect(colour = "grey10")
+  )
 ```
 
 
-```{r}
-# 
-# ggplot(dat_month, aes(month(month, label = TRUE), mean)) +
-#   geom_ribbon(
-#     aes(month, ymin = user_min, ymax = user_max),
-#     alpha = 0.25, fill = "#eabfff", col = "#d580ff", linewidth = 1.5
-#   ) +
-#   geom_point(size = 4, col = "grey20") +
-#   geom_errorbar(
-#     aes(ymin = mean - stdev, ymax = mean + stdev),
-#     width = 0, col = "grey20"
-#   ) +
-#   geom_hline(
-#     yintercept = c(95.15, 113), 
-#     col = "orange", linewidth = 1.5
-#   ) +
-#   scale_x_discrete("Month")
-```
+:::
+
+**could say that if normally distributed, would expect xx obs to be flagged**
+
+The means for each grouping method were similar, but the standard deviations were not (@tbl-thresh-comp). There was limited variability among the monthly means and the county means, resulting in relatively small standard deviations. This translates into very narrow user thresholds (@fig-histogram). Preliminary quality control was applied to the data used in this analysis, and 
+`r thresh_summary["month", "percent_out"]` % of these observations were still flagged using the monthly thresholds. For some months, these thresholds flag values within within one standard deviation of the monthly mean. This would lead to many "false positive" flags, i.e., observations that are flagged as [Suspect/Of Interest]{style="color: #EDA247;"}, despite being within a reasonable range. 
+
+The standard deviation for all of the data is nearly twice as large as for the other groups. This leads to broader user thresholds and fewer false positive flags. **Correspond to literature?**. Here only `r thresh_summary["all data", "percent_out"]` % of the observations were flagged. 
+
+To minimize the number of false positives, the thresholds based on all observations (ungrouped) will be used in QC analyses.
+
+Substantially more observations will be flagged from the raw data (i.e., with no preliminary quality control). Some of these should be considered [Of Interest]{style="color: #EDA247;"} (e.g., observations near the oxycline in Inverness, observations at depth in Guysborough), while others should be considered [Suspect]{style="color: #EDA247;"} (e.g., biofouling). 
 
 
 
+#### Climatology Test
+
+Observations from all counties were pooled to calculate a single set of climatology thresholds. The $avg_{season}$ was calculated as the average of all observations in a given month, and $stdev_{season}$ was the associated standard deviation. 
+
+For some months the climatology threshold will trigger a [Suspect/Of Interest flag]{style="color: #EDA247;"} before the Gross Range test (e.g., January - April); in other months, the Gross Range test will trigger the flag first (@fig-climatology-thresh).
 
 ::: panel-tabset
 
 ### Figure
 ```{r}
-#| label: fig-do-n-obs-month
-#| fig-height: 8
-#| fig-cap: The number of dissolved oxygen (percent saturation) observations in each month. 
+#| label: fig-climatology-thresh
+#| fig-cap: Monthly dissolved oxygen mean +/- 1 standard deviation. Solid orange lines indicate the climatology thresholds; dashed organge lines indicate the grossrange user thresholds.
 
-# p <- ggplot(month, aes(n, month)) +
-#   geom_col(
-#     position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
-#   ) +
-#   scale_y_discrete(name = "", limits = rev) +
-#   scale_x_continuous("Number of Dissolved Oxygen Observations")
-# 
-# ggplotly(p)
+month <- dat_summary %>%
+  filter(group == "all_month", units == "percent saturation") %>% 
+  select(month, n, mean, stdev) %>% 
+  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev)
 
-```
-
-### Figure 10
-```{r}
-#| label: fig-do-mean-month
-#| fig-cap: Mean +/- 1 standard deviation of dissolved oxygen data by month. The dashed orange lines show
-#| fig-height: 8
-
-p <- ggplot(
-  month, 
-  aes(
-    month(month, label = TRUE), mean,
-    text = paste("month: ", month(month, label = TRUE), "\n", "mean: ", mean))
-) +
-  geom_hline(yintercept = month_mean$mean, col = "grey50", linewidth = 0.75) +
-  geom_hline(
-    yintercept = c(month_mean$user_min, month_mean$user_max),
-    col = "grey50", linewidth = 0.75, linetype = 2
+alpha <- 0.4
+fill <- "orange"
+col <- "orange"
+linewidth <- 1
+    
+ggplot(month, aes(month(month, label = TRUE), mean)) +
+  geom_ribbon(
+    aes(month, ymin = user_min, ymax = user_max, xmin = -Inf, xmax = Inf), alpha = 0.25, 
+    fill = "#009200", col = NA, 
   ) +
-  geom_point(size = 4, col = "grey10") +
+  geom_ribbon(
+    aes(month, ymin = user_max, ymax = Inf), alpha = alpha,
+    fill = fill, col = col, linewidth = linewidth
+  ) +
+  annotate(
+    "rect", alpha = alpha*1.5,
+    ymin = thresh_all$user_max, ymax = Inf, xmin = 1, xmax = 12,
+    fill = fill, col = col, linewidth = linewidth, linetype = 2
+  ) +
+  geom_ribbon(
+    aes(month, ymin = -Inf, ymax = user_min), alpha = alpha, 
+    fill = fill, col = col, linewidth = linewidth, 
+  ) +
+  annotate(
+    "rect",  alpha = alpha * 1.5,
+    ymin = -Inf, ymax = thresh_all$user_min, xmin = 1, xmax = 12,
+    fill = fill, col = col, linewidth = linewidth, linetype = 2
+  ) +
+  geom_point(size = 4, col = "grey20") +
   geom_errorbar(
-    aes(ymin = mean - stdev, ymax = mean + stdev), width = 0, col = "grey10"
+    aes(ymin = mean - stdev, ymax = mean + stdev),
+    width = 0, col = "grey20"
   ) +
-  scale_x_discrete(name = "") +
-  scale_y_continuous("Dissolved Oxygen (% saturation)")
-
-ggplotly(p, tooltip = "text")
+  scale_x_discrete("Month") + 
+  scale_y_continuous("Dissolved Oxygen (percent saturation)") 
 
 ```
 
-### Table 2
+### Table 4
 ```{r}
-#| label: tbl-mean-month
-#| tbl-cap: Summary statistics of dissolved oxygen observations by month. 
-
 month %>% 
-  datatable(options = dt_options, rownames = FALSE)
+  select(-n) %>% 
+  mutate(month = month(month, label = TRUE)) %>% 
+   mutate(across(where(is.numeric), ~round(., 2))) %>% 
+  datatable(rownames = FALSE, options = dt_options)
 ```
 
 :::
 
 `r knitr::knit_exit()`
-
-
 
 
 ```{r, export-thresholds}

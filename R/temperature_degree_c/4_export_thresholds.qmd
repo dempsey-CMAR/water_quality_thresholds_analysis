@@ -1,5 +1,5 @@
 ---
-title: "CMAR Data Governance:<br/>Quality Control of Water Quality Data"
+title: "Temperature Thresholds"
 format: 
   html:
     toc: true
@@ -116,6 +116,8 @@ Not all of these tests were applied to the temperature data. The Test 1 and Test
 
 Temperature records for the threshold analysis were collected from `r length(na.omit(unique(dat$station)))` stations in `r length(na.omit(unique(dat$county)))` counties (@fig-temp-station-locations). A large proportion of the records are from Guysborough county (37 %), while a very small proportion are from Cape Breton county (0.1 %) (@fig-temp-n-obs).
 
+**say that outliers and freshwater, etc. removed**
+
 **show ALL temperature stations and then those that were used for the analysis - maybe as different layers**
 
 **add climatology vs. user threshold plot**
@@ -199,9 +201,6 @@ $$ {#eq-user-max}
 
 where $avg_{var}$ is the overall or "gross" average of the variable of interest, and $stdev_{var}$ is the standard deviation of the variable of interest.
 
-More detail on how these thresholds were selected for each variable is provided below.
-
-
 ### Sensor Threholds
 
 The sensor thresholds were determined based on the associated manual (Table 3).
@@ -230,6 +229,7 @@ gr_thresholds %>%
 ### User Thresholds
 
 User thresholds were calculated separately for each county (Table 4).
+**Say why**
 
 For most counties, the overall average temperature (all year, depths, stations) was substantially influenced by the number of observations in each month (@fig-temp-n-clim, @fig-temp-avg-comp).
 
