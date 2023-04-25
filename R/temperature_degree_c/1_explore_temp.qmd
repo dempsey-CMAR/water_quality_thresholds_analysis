@@ -25,11 +25,11 @@ library(summaryplots)
 theme_set(theme_light())
 
 dt_options <- list(
-      dom = 'ft',
-      paging = FALSE,
-      searching = TRUE,
-        scrollY = "500px",
-      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
 dat <- read_csv(here("data/summary.csv"), show_col_types = FALSE) %>% 
@@ -63,16 +63,11 @@ Marker size is proportional to the number of temperature observations within the
 ```{r}
 #| fig-height: 7
 
-# # set up colour palette - need to interpolate with colorRampPalette
-# n_col = length(unique(st_locations$COUNTY))
-# getpal = colorRampPalette(brewer.pal(8, "Dark2"))
-# pal <- colorFactor(getpal(n_col), domain = unique(st_locations$COUNTY))
-
 # join the station locations dataset with the number of obs from each station
 st_locations <- st_locations %>% 
   inner_join(
     dat %>% 
-      filter(group == "all_station", variable == "Temperature") %>% 
+      filter(group == "all_station") %>% 
       select(COUNTY = county, STATION = station, n),
     by = c("COUNTY", "STATION") 
   ) %>% 
@@ -117,7 +112,7 @@ p <- temp_county  %>%
   filter(county != "All") %>% 
   plot_n_obs_county()
 
-ggplotly(p, tooltip = "text")
+ggplotly(p)
 ```
 
 ### Figure 2
@@ -356,7 +351,7 @@ temp_month_county <- dat %>%
 #| fig-cap: The number of temperature observations in each month for each county.
 #| fig-cap-location: top
 
-p <- plot_n_obs_month(temp_month_county) +
+p <- plot_n_obs_month(temp_month_county, text_size = 12) +
   theme(panel.spacing.y = unit(15, "lines"))
 
 ggplotly(p)
@@ -381,7 +376,7 @@ ggplotly(p)
 #| fig-cap-location: top
 
 p <- plot_mean_sd_season_ribbon(
-  temp_month_county, facet_county = FALSE, group = "county"
+  temp_month_county, facet_county = FALSE, group = "county", text_size = 12
 )
 
 ggplotly(p, tooltip = "text")
@@ -463,19 +458,7 @@ for(i in seq_along(counties)){
     n_group = n_years,
     facet_county = FALSE, y_limits = c(-2, 27)
   )
-  # ggplot(dat.i, aes(month, mean, group = year, col = factor(year))) +
-  # geom_point(size = 3) +
-  # geom_line(aes(col = factor(year))) +
-  # geom_ribbon(
-  #   aes(ymin = mean - stdev, ymax = mean + stdev, fill = factor(year)), 
-  #   alpha = 0.25, col = NA
-  # ) +
-  # scale_x_discrete(name = "") +
-  # scale_y_continuous(
-  #   "Temperature (mean +/- standard deviation)",
-  #   limits = c(-2, 27)
-  # )  
-  
+
   print(p)
 }
   

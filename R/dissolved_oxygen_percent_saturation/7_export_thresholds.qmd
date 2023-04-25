@@ -41,23 +41,23 @@ dt_options <- list(
 )
  
 # percent saturation data used for threshold analysis
-dat_sat <- import_strings_data(input_path = here("data-raw")) %>%
-  select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
-  mutate(
-    COUNTY = if_else(STATION == "Sandy Cove St. Marys", "Digby", COUNTY),
-    DEPTH = round(as.numeric(DEPTH)),
-    MONTH = month(TIMESTAMP),
-    YEAR = year(TIMESTAMP)
-  ) %>% 
-  filter(
-    VARIABLE == "Dissolved Oxygen", 
-    UNITS == "percent saturation",
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
-    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
-    !(STATION == "Ram Island" &
-        TIMESTAMP > as_datetime("2021-10-10")
-      & TIMESTAMP < as_datetime("2021-11-15"))
-  )
+# dat_sat <- import_strings_data(input_path = here("data-raw")) %>%
+#   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
+#   mutate(
+#     COUNTY = if_else(STATION == "Sandy Cove St. Marys", "Digby", COUNTY),
+#     DEPTH = round(as.numeric(DEPTH)),
+#     MONTH = month(TIMESTAMP),
+#     YEAR = year(TIMESTAMP)
+#   ) %>% 
+#   filter(
+#     VARIABLE == "Dissolved Oxygen", 
+#     UNITS == "percent saturation",
+#     !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+#     !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
+#     !(STATION == "Ram Island" &
+#         TIMESTAMP > as_datetime("2021-10-10")
+#       & TIMESTAMP < as_datetime("2021-11-15"))
+#   )
 
 # summarized data - from same dataset imported in above
 dat_summary <- read_csv(
@@ -91,154 +91,7 @@ gr_thresholds <- read_csv(
 
 **DRAFT `r Sys.Date()`**
 
-# Dissolved Oxygen 
 
-- some of this section might get pulled into a broader Coastal Monitoring Program section
-
-Dissolved oxygen (DO) is a measure of the amount of gaseous oxygen dissolved in water, which is a key water quality parameter for much aquatic life [@RN26876]. There are many drivers of DO variability, including biological activity (e.g., photosynthesis, respiration, plankton blooms), physical processes (e.g., air-sea exchange, tidal events, meteorology, seasonal stratification), and chemical reactions (e.g., oxidation of organic material) [@RN26876; @RN26562]. DO is typically higher near the surface, where it is produced by photosynthetic organisms and is in flux to maintain equilibrium with the atmosphere (refs). DO is distributed to deeper waters by vertical mixing and diffusion.
-
-Dissolved oxygen can be measured in different units, including concentration and percent saturation (reference SCOR WG 142, Bittig 2018, plus InnovaSea for %sat). For fisheries and aquaculture applications, concentration is often reported in milligrams of gaseous oxygen per litre of water (mg / L), which is equivalent to parts per million (ppm) [https://atlas-scientific.com/blog/dissolved-oxygen-in-water-ppm-for-fish/]. 
-
-Percent saturation describes how "full" of oxygen the water is (@eq-percent-sat-conc). The maximum amount of oxygen that can be dissolved depends on the water temperature, salinity, and barometric pressure (@fig-do-solubility-sal, @fig-do-solubility-press). For units of concentration, this theoretical maximum is called the DO solubility, and is typically calculated from equations based on those developed by Benson and Krause (1980, 1984) and Garcia and Gordon (1992)[^1] (@RN26883; @RN24333; @RN24266). The percent saturation is the *measured* DO concentration as fraction of the DO solubility (@eq-percent-sat-conc). 
-
-[^1]: The USGS has an online DO solubility calculator based on the Benson and Krause equations ([DOTABLES](https://water.usgs.gov/water-resources/software/DOTABLES/)). The CMAR R package `docalcs` provides functions for calculating solubility and correction factors based on Benson and Krause and Garcia and Gordon. See the CMAR DO cheat sheet for more information about these equations.
-
-
-$$
-DO_{\%saturation} = 100 * DO_{concentration}/DO_{solubility}
-$$ {#eq-percent-sat-conc}
-
-Percent saturation can also be calculated from partial pressures, although DO is not typically expressed in pressure units (@eq-percent-sat-pp). In this case, the maximum amount of DO that can be dissolved is the partial pressure of oxygen in the air ($pO_{2, air}$), as calculated in SCOR WG 142 [@RN26886]. The actual amount of DO in the water is measured by the sensor in corresponding pressure units ($pO_2$).
-
-$$
-DO_{\%saturation} = 100 * pO_2 / pO_{2, air}
-$$ {#eq-percent-sat-pp}
-
-```{r, fig-do-solubility-sal}
-#| label: fig-do-solubility-sal
-#| fig-height: 4
-#| fig-cap: Relationship between DO solubility and temperature at five values of salinity (pressure = 1 atm). Note that DO solubility decreases with increasing temperature and salinity.
-
-do_sal <- expand.grid(
-  Temperature = seq(0, 40, 1) , Salinity = seq(0, 40, 10)
-) %>% 
-  mutate(Pressure = 1) %>% 
-  do_solubility() %>% 
-  mutate(Salinity = factor(Salinity))
-
-ggplot(do_sal, aes(Temperature, C_p, group = Salinity, col = Salinity)) + 
-  geom_line(linewidth = 1.5) +
-  scale_colour_brewer("Salinity (psu)", palette = "Dark2") +
-  scale_y_continuous(
-    "DO Solubility (mg / L)",
-    limits = c(5 ,15), 
-    breaks = seq(5, 15, 2)
-  ) +
-  scale_x_continuous("Temperature (degree C)") +
-  theme(
-    text = element_text(size = 14),
-    legend.position = c(0.85, 0.74),
-    legend.background = element_rect(colour = "grey")
-  )
-
-```
-
-```{r, fig-do-solubility-press}
-#| label: fig-do-solubility-press
-#| fig-height: 4
-#| fig-cap: Relationship between DO solubility and temperature at three values of barometric pressure (in freshwater). Note that DO solubility increases with increasing pressure.
-
-do_pres <- expand.grid(
-  Temperature = seq(0, 40, 1) , Pressure = seq(0.5, 1.1, 0.2)
-) %>%
-  mutate(Salinity = 0) %>%
-  do_solubility() %>%
-  mutate(Pressure = factor(Pressure))
-
-ggplot(do_pres, aes(Temperature, C_p, group = Pressure, col = Pressure)) +
-  geom_line(linewidth = 1.5) +
-  scale_colour_brewer("Pressure (atm)", palette = "Set2") +
-  scale_y_continuous(
-    "DO Solubility (mg / L)",
-    limits = c(2.9, 17), 
-    breaks = seq(3, 17, 2)
-  ) +
-  scale_x_continuous("Temperature (degree C)") +
-  theme(
-    text = element_text(size = 14),
-    legend.position = c(0.85, 0.78),
-    legend.background = element_rect(colour = "grey")
-  )
-```
-
-
-When the measured DO concentration is greater than the DO solubility ($DO_{\%saturation} > 100 \%$), the water is considered "supersaturated". Supersaturated water is typically caused by photosynthetic organisms, which are a large source of pure oxygen to the water column (@RN26885; @RN12865)[^2]. Additionally, a rapid increase in temperature can decrease the DO solubility without altering the measured DO concentration, resulting in saturation values greater than 100 %[^3]. The excess DO will eventually diffuse into the atmosphere, but this process is not instantaneous (**ref**).
-
-
-[^2]: This is important because DO sensors are typically calibrated in *air*-saturated water (or water-saturated air). Air is only ~ 21 % oxygen, so there are nearly 5 times more $O_2$ molecules in pure oxygen compared to the same volume of air. This means that a sensor reading from *air*-saturated water would be 100 %, while a reading from pure *oxygen*-saturated water would be ~ 500 %. Photosynthesis can therefore account for very high percent saturation measurements [@RN26885].
-
-[^3]: For example, consider a DO concentration of 10 mg / L in freshwater at 10 degree C and 1 atm. The DO solubility is 11.29 mg / L (@fig-do-solubility-sal), and so the percent saturation is 10 / 11.29 = 88.6 %. If the temperature during the day warmed to 20 degrees C, the DO solubility would decrease to 9.09 mg / L (@fig-do-solubility-sal). The measured concentration remains 10 mg / L, and so the percent saturation is now 10 / 9.09 = 110 %.
-
-
-Conversion between DO units can be non-trivial [@RN26886]. DO solubility is used to convert between units of concentration and percent saturation, which means estimates of temperature, salinity, and pressure are required. For the most accurate conversion, each DO observation should have a corresponding observation of these water properties. However, this is not always feasible, particularly for long deployments. Single value estimates can be used to convert data from the whole deployment (refs)
-
-**add more references to these paras**
-A major challenge of accurately measuring DO near the surface (in the euphotic zone) is the growth of aquatic organisms on and around the sensor, called biofouling [e.g., @RN26877]. Biofouling can range from a small film of algae, to large colonies/growths of seaweed, to colonies of mollusks **Insert a CMAR photo**. The daily cycle of photosynthesis (oxygen production; during the day) and respiration (oxygen consumption; relatively higher at night) of these organisms can cause extreme variability in the DO measurements. The recorded DO therefore reflects the microcosm growing on the sensor, but not the ambient environment. This signal can occur within a month or two of deployment [@RN26877], depending on time time of year and location. Other impacts of biofouling can include signal attenuation, sensor drift, and decreased mooring depth from the additional weight.
-
-
-Anti-fouling strategies can be employed to reduce fouling and improve data quality, although these present additional challenges. Sensors can be cleaned regularly to remove growth (e.g., every 2 - 4 weeks), although this may not be feasible for many reasons (e.g., cost and time constraints). Some sensors have built-in anti-fouling mechanisms such as wipers (ref) or UV light (ref) to reduce growth. These sensors can present other challenges, including cost and reduced battery life. Copper (a natural biocide) tape, wire, or screens around the sensor can reduce fouling for several weeks, although this can also become expensive and may not be sufficient for longer deployments [@RN26887] **(other refs here)**. 
-
-**Move this to intro?**
-Quality control of DO data can also be challenging and time consuming. There is a broad range of "reasonable" DO values, depending on the location, depth, season, oceanographic conditions, etc. Rapid and extreme variability may reflect the natural processes that are of interest to the monitoring program, including phytoplankton blooms, storms, and upwelling (qartod). However, this signal could also be a result of biofouling. To identify the most likely driver, further investigation is required. For example, the timing of the variability with respect to sensor deployment, time of year, and co-located variables could provide insight into the reliability of the measurements. It is also difficult to detect and quantify sensor drift over time for a single deployment. Consecutive deployments at the same station can highlight drift. 
-
-
-
-
-- optical sensors paragraph here
-- salinity correction factors
-
-
-## CMAR Dissolved Oxygen Measurements
-
-There is typically one DO sensor on each sensor string, usually attached 5 m below the surface (@fig-do-n-obs-depth). This choice of depth reflects the original Coastal Monitoring Program objective, which was to provide data to inform aquaculture site selection[^4]. As the Program and mandate expand, DO sensors continue to be deployed at this depth for consistency and longevity of the time series. **However, DO has been measured at other depths for specific research projects, particularly in Whycocomagh Basin, Inverness County (link to Inverness report)** (@fig-do-n-obs-depth).
-
-[^4]: 5 m is approximately mid-cage depth for net pens in the region.
-
-```{r}
-#| label: fig-do-n-obs-depth
-#| fig-height: 8
-#| fig-cap: Number of dissolved oxygen observations at each depth. Observations at 60 m are from Tickle Island, Guysborough county.
-#| fig-cap-location: top
-
-p <- dat_summary %>% 
-  filter(group == "all_depth") %>% 
-  group_by(depth) %>% 
-  summarise(n = sum(n)) %>% 
-  ggplot(aes(n, factor(depth), fill = factor(depth), 
-             text = paste("n: ", n, "\n", "depth: ", depth, "m"))
-  ) +
-  geom_col(
-    position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
-  ) +
-  scale_x_continuous("Number of Dissolved Oxygen Observations") +
-  scale_y_discrete(name = "Sensor Depth Below Surface at Low Tide (m)", limits = rev) +
-  theme(legend.position = "none") 
-
-ggplotly(p, tooltip = "text")
-
-```
-
-CMAR uses two types of sensors to measure DO: the aquaMeasure DOT [@RN25012] and Onset HOBO U26 [@RN25011].  
-
-CMAR has a large inventory of DOTs (71 in April 2023), which are used for most deployments with DO. The DOT measures temperature and partial pressure of oxygen, providing DO values in units of percent saturation. Partial pressure values are not affected by salinity [@RN13158], and so no correction factor is required for these measurements. For CMAR deployments, each DOT is programmed to measure and internally log at 10 minute intervals. CMAR typically retrieves sensors after ~1 year for data offload, cleaning, and calibration/validation. 
-  - InnovaSea water vapour cal does not include salinity (assumes 0)
-
-CMAR supplemented their DO sensor inventory with 13 HOBO U26 sensors in 2021, and purchased an additional 10 in January 2023. The HOBO U26 measures concentration, and provides DO vales in units of mg / L. For CMAR deployments, each HOBO U26 is programmed to recorded temperature and dissolved oxygen every 10 minutes. These sensors have a sensor cap that needs to be replaced every 6 months. They are deployed in St. Margaret's Bay and Mahone Bay rather than more remote locations so that they can be serviced twice a year with minimal travel requirements (@fig-do-station-locations).
-
-The HOBO U26 sensor does not account for salinity, so the measurements should be adjusted based on a salinity correction factor before analysis. The [HOBOware software](https://www.onsetcomp.com/products/software/hoboware) can apply this salinity correction if salinity conditions are provided. [HOBOware](https://www.onsetcomp.com/products/software/hoboware) can also convert measured concentration values to percent saturation if salinity and pressure conditions are provided. The CMAR R package `docalcs` provides functions for those calculations; however, CMAR does not have consistent salinity or pressure measurements, and so the uncorrected data are provided. 
-
-
-The DOT and HOBO U26 do not have any anti-fouling mechanisms, and so measurements can be susceptible to bio-fouling. Ideally, sensors would be cleaned more frequently to remove fouling, but this is not feasible due to logistical and financial constraints. Significant effort was made to identify and flag possible biofouling signals, although this is challenging for the reasons noted above.
 
 
 ```{r, fig-do-station-units}
@@ -302,27 +155,6 @@ leaflet(st_locations_units) %>%
 ```
 
 
-## DO QC Test
-
-QC tests for DO were adapted from "Manual for Real-Time Quality Control of Dissolved Oxygen Observations" [@RN26562]. These tests are listed in @tbl-do-tests.
-
-|                      |         |                        |
-|----------------------|---------|------------------------|
-| Required             | Test 1  | Gap Test               |
-| Required             | Test 2  | Syntax Test            |
-| Required             | Test 3  | Location Test          |
-| Required             | Test 4  | Gross Range Test       |
-| Required             | Test 5  | Climatological Test    |
-| Strongly Recommended | Test 6  | Spike Test             |
-| Strongly Recommended | Test 7  | Rate of Change Test    |
-| Strongly Recommended | Test 8  | Flat Line Test         |
-| Suggested            | Test 9  | Multi-Variate Test     |
-| Suggested            | Test 10 | Attenuated Signal Test |
-| Suggested            | Test 11 | Neighbor Test          |
-
-: QARTOD tests for dissolved oxygen [@RN26562]. {#tbl-do-tests}
-
-Not all of these tests were applied to the dissolved oxygen data. The Test 1 and Test 2 are meant to identify gaps and syntax errors in real time so that the errors can be fixed and the record resume. They are therefore not applicable to the Coastal Monitoring data sets. The Suggested tests are beyond the capacity of the current Data Governance team, but could be implemented in the future.
 
 
 ## Gross Range Test
@@ -376,14 +208,6 @@ county_gr <- county_month %>%
   )
 ```
 
-A single set of user thresholds was determined for all counties because the DO records were relatively patchy in space and time (@fig-do-station-locations; @fig-do-n-obs-sat; @fig-do-n-obs-county-month), and because there was only minor variation between counties (@fig-do-county-mean). This analysis could be revisited and thresholds revised when there is more consistent data.
-
-**move this up**
-$DO_{\%saturation}$ data was collected from `r length(na.omit(unique(dat_sat$STATION)))` stations in `r length(na.omit(unique(dat_sat$COUNTY)))` counties (@fig-do-station-locations). A large proportion of these records are from Guysborough (25 %) and Shelburne (22 %) counties, while a small proportion are from Pictou (0.78 %) and Antigonish (0.58 %) (@fig-do-n-obs-sat). Five counties have only one station with DO data (@fig-do-station-locations). For most counties, there are fewer "good" records in the spring and summer months, when conditions are conducive to biofouling[^6], and several counties have no data for at least one month (@fig-do-n-obs-county-month).
-
-[^6]: e.g. more daylight
-
-For each county, the overall average $DO_{\%saturation}$ was calculated from the monthly climatology to give each month equal weight regardless of number of observations collected. The overall average values ranged from `r round(min(county_gr$mean))` % for `r county_month[which(county_gr$mean == min(county_gr$mean)), "county"]$county` County to `r round(max(county_gr$mean))` % for `r county_gr[which(county_gr$mean == max(county_gr$mean)), "county"]$county` County. Note that Inverness only has data for June to September (months that typically have relatively high DO), while Antigonish is missing data from July to September (@fig-do-n-obs-county-month). The range of the remaining counties is approximately 6 %.
 
 ::: panel-tabset
 
@@ -437,6 +261,11 @@ p <- ggplot(county_month , aes(n, month)) +
 
 ggplotly(p)
 ```
+
+**Remove this??**
+
+For each county, the overall average $DO_{\%saturation}$ was calculated from the monthly climatology to give each month equal weight regardless of number of observations collected. The overall average values ranged from `r round(min(county_gr_sat$mean))` % for `r county_gr_sat[which(county_gr_sat$mean == min(county_gr_sat$mean)), "county"]$county` County to `r round(max(county_gr_sat$mean))` % for `r county_gr_sat[which(county_gr_sat$mean == max(county_gr_sat$mean)), "county"]$county` County. Note that Inverness only has data for June to September (months that typically have relatively high DO), while Antigonish is missing data from July to September (@fig-do-n-obs-county-month). The range of the remaining counties is approximately 6 %.
+
 
 ### Figure
 ```{r}
@@ -604,20 +433,9 @@ ggplot(dat_sat, aes(VALUE)) +
 
 :::
 
-**could say that if normally distributed, would expect xx obs to be flagged**
-
-The means for each grouping method were similar, but the standard deviations were not (@tbl-thresh-comp). There was limited variability among the monthly means and the county means, resulting in relatively small standard deviations. This translates into very narrow user thresholds (@fig-histogram). Preliminary quality control was applied to the data used in this analysis, and 
-`r thresh_summary["month", "percent_out"]` % of these observations were still flagged using the monthly thresholds. For some months, these thresholds flag values within within one standard deviation of the monthly mean. This would lead to many "false positive" flags, i.e., observations that are flagged as [Suspect/Of Interest]{style="color: #EDA247;"}, despite being within a reasonable range. 
-
-The standard deviation for all of the data is nearly twice as large as for the other groups. This leads to broader user thresholds and fewer false positive flags. **Correspond to literature?**. Here only `r thresh_summary["all data", "percent_out"]` % of the observations were flagged. 
-
-To minimize the number of false positives, the thresholds based on all observations (ungrouped) will be used in QC analyses.
-
-Substantially more observations will be flagged from the raw data (i.e., with no preliminary quality control). Some of these should be considered [Of Interest]{style="color: #EDA247;"} (e.g., observations near the oxycline in Inverness, observations at depth in Guysborough), while others should be considered [Suspect]{style="color: #EDA247;"} (e.g., biofouling). 
 
 
-
-#### Climatology Test
+### Climatology Test
 
 Observations from all counties were pooled to calculate a single set of climatology thresholds. The $avg_{season}$ was calculated as the average of all observations in a given month, and $stdev_{season}$ was the associated standard deviation. 
 
