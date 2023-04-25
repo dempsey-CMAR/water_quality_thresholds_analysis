@@ -38,20 +38,16 @@ dat_all <- import_strings_data(input_path = here("data-raw")) %>%
     YEAR = year(TIMESTAMP)
   ) %>%
   filter(
-    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen") #&
-   #  !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen")
+    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
+    !(STATION == "Ram Island" & TIMESTAMP > as_datetime("2021-10-10") &
+          TIMESTAMP < as_datetime("2021-11-15") & VARIABLE == "Dissolved Oxygen")
+  ) %>%
+  mutate(
+    COUNTY = if_else(STATION == "Sandy Cove St. Marys", "Digby", COUNTY),
+    DEPTH = round(as.numeric(DEPTH)),
+    MONTH = month(TIMESTAMP),
+    YEAR = year(TIMESTAMP)
   )
-
-# x <- dat_all %>%
-#   filter(
-#     VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation",
-#     COUNTY == "Lunenburg" | COUNTY == "Shelburne") %>%
-#   filter(
-#     !(STATION == "Snake Island" & DEPTH %in% c(10, 15, 20)) &
-#       !(STATION == "Birchy Head" & DEPTH == 20) &
-#       !(STATION == "McNutts Island" & DEPTH == 15)
-#   ) %>%
-#   summarise_grouped_data(group_name = "county", COUNTY)
 
 # summarize data ----------------------------------------------------------
 all <- dat_all %>%
