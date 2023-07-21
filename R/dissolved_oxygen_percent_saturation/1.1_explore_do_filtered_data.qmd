@@ -487,7 +487,7 @@ county_month_year <- dat %>%
   mutate(
     n_percent = round(n * 100 / sum(n), digits = 1),
     month = month(month, label = TRUE),
-     year = factor(year)
+    year = factor(year)
   ) %>% 
   select(-c(units, group, station, depth)) %>% 
   ungroup()
