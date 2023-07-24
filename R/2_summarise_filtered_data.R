@@ -1,8 +1,11 @@
 # February 1, 2023
+# Updated July 24, 2023
 
-# Imports processed Water Quality observations, then filters to exculde
+# Imports processed Water Quality observations, then filters to exclude
 # freshwater stations and other outliers
-# ("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")
+# ("Piper Lake", "Hourglass Lake", "0193", "Sissiboo", several depths at Inverness
+# stations 0814x East, 0814x West, Aberdeen, and Deep Basin )
+
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
 #### All data
@@ -30,7 +33,7 @@ source(here("functions/summarise_grouped_data.R"))
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
   filter(
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
   ) %>%
   mutate(
     DEPTH = round(as.numeric(DEPTH)),
@@ -38,15 +41,12 @@ dat_all <- import_strings_data(input_path = here("data-raw")) %>%
     YEAR = year(TIMESTAMP)
   ) %>%
   filter(
-    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
-    !(STATION == "Ram Island" & TIMESTAMP > as_datetime("2021-10-10") &
-          TIMESTAMP < as_datetime("2021-11-15") & VARIABLE == "Dissolved Oxygen")
-  ) %>%
-  mutate(
-    COUNTY = if_else(STATION == "Sandy Cove St. Marys", "Digby", COUNTY),
-    DEPTH = round(as.numeric(DEPTH)),
-    MONTH = month(TIMESTAMP),
-    YEAR = year(TIMESTAMP)
+    # don't move this up because uses rounded depths
+    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) &
+        VARIABLE == "Dissolved Oxygen"),
+    !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen")
+    # !(STATION == "Ram Island" & TIMESTAMP > as_datetime("2021-10-10") &
+    #     TIMESTAMP < as_datetime("2021-11-15") & VARIABLE == "Dissolved Oxygen")
   )
 
 # summarize data ----------------------------------------------------------
@@ -96,7 +96,7 @@ dat_out <- bind_rows(
     month = MONTH
   )
 
-write_csv(dat_out, here("data/summary_filtered_data.csv"))
+write_csv(dat_out, here("data/2_summary_filtered_data.csv"))
 
 
 

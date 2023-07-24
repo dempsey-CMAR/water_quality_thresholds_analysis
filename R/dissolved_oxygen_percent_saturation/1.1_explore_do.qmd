@@ -23,6 +23,8 @@ library(RColorBrewer)
 library(readr)
 library(summaryplots)
 
+source(here("functions/subchunkify.R"))
+
 theme_set(theme_light())
 
 dt_options <- list(
@@ -35,7 +37,7 @@ dt_options <- list(
 
 # summarized data 
 dat <- read_csv(
-  here("data/summary.csv"), show_col_types = FALSE
+  here("data/1_summary.csv"), show_col_types = FALSE
 ) %>% 
   filter(variable == "Dissolved Oxygen", units == "percent saturation")
 
@@ -46,21 +48,20 @@ st_locations <- read_csv(
 
 county_pal <- get_county_colour_palette(length(unique(st_locations$COUNTY)))
 
+theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 ```
 
 # EXPLORATORY ANALYSIS: DISSOLVED OXYGEN
 
-**DRAFT April 23, 2023**
+July 23, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
-
-- Preliminary QC was applied to the data.
-  - Obvious outliers removed.
-  - Suspected biofouling removed
-
 - Depth rounded to nearest whole number
   - Results in depth of 0 m for 1042 and Sissiboo.
-  
+- Preliminary QC was applied to the data before submission to the Open Data Portal.
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
+
 # Station Locations
 
 Approximate location of stations with dissolved oxygen data.
@@ -94,8 +95,8 @@ leaflet(st_locations) %>%
 
 ```
 
-- 4 counties have only 1 station with dissolved oxygen data: Antigonish, Colchester, Queens, and Richmond.
-- Guysborough has 18 stations with dissolved oxygen data.
+- `r nrow(dat %>% filter(group == "all_station") %>% group_by(county) %>% filter(n() == 1))` counties have only 1 station with dissolved oxygen data: `r x <- dat %>% filter(group == "all_station") %>% group_by(county) %>% filter(n() == 1); paste(x$county, collapse = ", ")`
+- Guysborough has `r nrow(dat %>% filter(group == "all_station", county == "Guysborough") %>% distinct(station))` stations with dissolved oxygen data.
 
 # Gross Range
 
@@ -116,7 +117,7 @@ county <- dat %>%
 ### Figure 1
 ```{r}
 #| fig-height: 8
-#| fig-cap: The number of dissolved oxygens observations in each county. The number at the end of each bar indicates the percent of the total dissolved oxygen observations from the associated county.
+#| fig-cap: The number of dissolved oxygens observations in each county. 
 #| fig-cap-location: top
 
 p <- county  %>% 
@@ -139,7 +140,7 @@ ggplotly(p, tooltip = "text")
 
 ### Table 1
 ```{r}
-#| fig-cap: Summary statistics of dissolved oxygen observations - total and by county. Grossrange user-defined thresholds are calculated as user_min = mean - 3 * stdev and user_max = mean + 3 * stdev.
+#| fig-cap: Summary statistics of dissolved oxygen observations (total and by county). Grossrange user-defined thresholds are calculated as user_min = mean - 3 * stdev and user_max = mean + 3 * stdev.
 #| fig-cap-location: top
 
 county %>% 
@@ -149,8 +150,8 @@ county %>%
 ```
 :::
 
-- Inverness: includes dissolved oxygen data from depth (below the oxycline) in Whycocomagh Basin (18 m and 40 m at Deep Basin, 28 m at Aberdeen, and 17 m at 0814x East and West).
-- Pictou includes data from Piper Lake.
+- Inverness: includes dissolved oxygen data from depth (below the oxycline) in Whycocomagh Basin (18 m and 40 m at Deep Basin, 28 m at Aberdeen, and 17.5 m at 0814x East and 0814x West).
+- Pictou includes winter data from Piper Lake.
 
 ## Depth
 
@@ -187,7 +188,8 @@ ggplotly(p, tooltip = "text")
 :::
 
 - Dissolved oxygen sensors are typically placed at 5 m below the surface.
-- Measurements at 8, 18, 28, and 26 m are all from Whycocomagh Basin (on and below the oxycline).
+- Measurements at 8, 18, 28, and 36 m are all from Whycocomagh Basin (on and below the oxycline).
+- Tickle Island, Guysborough is the only station with DO data deeper than 36 m.
 
 
 ## County + Depth
@@ -218,7 +220,8 @@ ggplotly(p)
 #| fig-cap: The number of dissolved oxygen obervations at each depth for each county.
 #| fig-cap-location: top
 
-p <- plot_n_obs_depth(county_depth)
+p <- plot_n_obs_depth(county_depth) +
+  theme_facet_plotly
 
 ggplotly(p)
 ```
@@ -228,7 +231,8 @@ ggplotly(p)
 #| fig-height: 10
 #| fig-cap: Average dissolved oxygen and standard deviation for each county at each measured depth. 
 
-p <- plot_mean_sd_depth(county_depth, text_size = 12)
+p <- plot_mean_sd_depth(county_depth, text_size = 12) +
+  theme_facet_plotly
 
 ggplotly(p, tooltip = "text")
 ```
@@ -257,10 +261,10 @@ ggplotly(p)
 ```
 :::
 
-
 - Digby: 0 m is from Sissiboo; 2 and 6 m are from Hourglass Lake.
 - Guysborough: 60 m is from Tickle Island
 - Inverness: measurements at 8, 18, 28, and 26 m are all from Whycocomagh Basin (on and below the oxycline).
+- Picou: 2 m is low because if the winter measurements from Piper Lake.
 
 
 # Climatology
@@ -280,7 +284,7 @@ month <- dat %>%
 ### Figure 9
 ```{r}
 #| fig-height: 8
-#| fig-cap: The number of dissolved oxygens observations in each month. The number at the end of each bar indicates the percent of the total dissolved oxygen observations from the associated month.
+#| fig-cap: The number of dissolved oxygens observations in each month. 
 #| fig-cap-location: top
 
 p <- plot_n_obs_month(month, facet_county = FALSE)
@@ -291,6 +295,7 @@ ggplotly(p)
 ### Figure 10
 ```{r}
 #| fig-height: 8
+#| fig-cap: Mean and standard deviation of dissolved oxygen observations by month.
 #| fig-cap-location: top
 
 p <- plot_mean_sd_season(month, facet_county = FALSE)
@@ -367,6 +372,9 @@ month_year %>%
 :::
 
 - There is a small but noticeable climatological cycle, especially in 2019 and 2021. This may be better resolved for 2018 and 2020 when the Inverness data has been removed.
+- The notable dip in July 2022 is likely because 81 % of the observations in that month are from Tickle Island, Guysborough county at 60 m, which typically has lower DO than shallower stations (Figure 7).
+  - The only other station with DO data for this month is Ingomar. 
+  - This may change when more 2022 data is processed.
 
 ## Month + County
 ```{r}
@@ -385,7 +393,7 @@ county_month <- dat %>%
 #| fig-cap-location: top
 
 p <- plot_n_obs_month(county_month, text_size = 12) +
-  theme(panel.spacing.y = unit(15, "lines"))
+  theme_facet_plotly
 
 ggplotly(p)
 ```
@@ -450,7 +458,7 @@ ggplotly(p)
 ### Figure 18
 ```{r}
 #| fig-height: 8
-#| fig-cap: The mean and standard deviation of dissolved oxygen in each county.
+#| fig-cap: The standard deviation of dissolved oxygen in each county, with and without accounting for climatology first.
 #| fig-cap-location: top
 
 p <- ggplot(county_gr, aes(stdev, county, fill = group)) +
@@ -463,10 +471,12 @@ ggplotly(p)
 :::
 
 - Fewest dissolved oxygen observations in the spring and summer, likely due to biofouling.
-- Some evidence of climatological cycle within counties; Inverness and Pictou driven by outlying stations (Whycocomagh Basin and Piper Lake).
-- Very small standard deviations
-- Some influence of number of observations per month impacting the mean.
-  - Mean typically gets higher, because fewer observations in the spring/summer when DO is higher (??).
+- Some evidence of climatological cycle within counties.
+- Inverness and Pictou have high standard deviation driven by outlying stations (Whycocomagh Basin and Piper Lake).
+- Remaining counties have very small standard deviations.
+- Limited impact of climatology on the mean, except for Inverness and Pictou.
+- Standard deviation is typically smaller when climatology is considered.
+
 
 ## Month + County + Year
 ```{r}
@@ -480,6 +490,7 @@ county_month_year <- dat %>%
   ) %>% 
   select(-c(units, group, station, depth)) %>% 
   ungroup()
+
 ```
 
 ### Number of Obervations
@@ -491,23 +502,26 @@ Figures are not interactive.
 ::: panel-tabset
 
 ```{r}
-#| fig-height: 8
 #| results: "asis"
 
 counties <- unique(county_month_year$county)
 
 for(i in seq_along(counties)){
-    
-  county.i <- counties[i]
-  dat.i <- county_month_year %>% filter(county == county.i)
   
-  cat('\n###', county.i, '\n')
+  county_i <- counties[i]
+  dat_i <- county_month_year %>% filter(county == county_i)
   
-  p <- plot_n_obs_month(dat.i, text_size = 12) +
-    facet_wrap(~year) 
-
-  print(p)
-
+  # height of figure j
+  n_years <- length(unique(dat_i$year))
+  if(n_years <= 3) h = 4
+  if(n_years > 3) h = 8
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_n_obs_month(dat_i, text_size = 12) +
+    facet_wrap(~year, ncol = 3) 
+  
+  subchunkify(p, fig_height = h, fig_width = 8.5)
 }
 ```
 :::
@@ -527,15 +541,15 @@ n_years <- length(unique(county_month_year$year))
 
 for(i in seq_along(counties)){
   
-  county.i <- counties[i]
+  county_i <- counties[i]
   
-  dat.i <- county_month_year %>% 
-    filter(county == county.i)
+  dat_i <- county_month_year %>% 
+    filter(county == county_i)
   
-  cat('\n###', county.i, '\n')
+  cat('\n###', county_i, '\n')
   
   p <- plot_mean_sd_season_ribbon(
-    dat.i, group = "year",
+    dat_i, group = "year",
     n_group = n_years,
     facet_county = FALSE, y_limits = c(60, 130)
   ) 
@@ -546,4 +560,13 @@ for(i in seq_along(counties)){
   
 ```
 :::
+
+# Recommendations for Additional QC
+
+- Remove freshwater stations (Hourglass Lake, Piper Lake, Sissiboo)
+- Remove other outlier data series
+  - Data from Whycocmagh Bay near or below the oxycline (8, 18, 28, 36 m)
+  - Tickle Island at 60 m
+
+
 

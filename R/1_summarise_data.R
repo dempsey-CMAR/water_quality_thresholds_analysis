@@ -1,8 +1,12 @@
-# Febraury 1, 2023
+# February 1, 2023
+# Updated July 24, 2023
 
 # Imports ALL processed Water Quality observations
+# Preliminary Quality Control was applied
+
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
+
 #### All data
 #### county
 #### county + depth
@@ -25,7 +29,12 @@ source(here("functions/summarise_grouped_data.R"))
 
 # read in data
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
-  select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS)
+  select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
+  mutate(
+    DEPTH = round(as.numeric(DEPTH)),
+    MONTH = month(TIMESTAMP),
+    YEAR = year(TIMESTAMP)
+  )
 
 # summarise data ----------------------------------------------------------
 all <- dat_all %>%
@@ -76,7 +85,7 @@ dat_out <- bind_rows(
     month = MONTH
   )
 
-write_csv(dat_out, here("data/summary.csv"))
+write_csv(dat_out, here("data/1_summary.csv"))
 
 
 
