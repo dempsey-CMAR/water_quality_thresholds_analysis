@@ -308,6 +308,18 @@ p <- plot_mean_sd_season(month, facet_county = FALSE)
 ggplotly(p)
 
 ```
+
+### Table 2
+```{r}
+#| fig-cap: Summary statistics of dissolved oxygen observations.
+#| fig-cap-location: top
+
+month %>% 
+  select(month, n, mean, stdev) %>% 
+  mutate(season_min = mean - 3 * stdev, season_max = mean + 3 * stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
 :::
 
 - Fewest dissolved oxygen observations in the spring and summer, likely due to preliminary QC to remove biofouling.
@@ -367,8 +379,7 @@ p <- plot_mean_sd_season_ribbon(month_year, group = "year", facet_county = FALSE
 ggplotly(p, tooltip = "text")
 ```
 
-### Table 2
-
+### Table 3
 ```{r}
 month_year %>% 
   select(year, month, n, mean, stdev) %>% 

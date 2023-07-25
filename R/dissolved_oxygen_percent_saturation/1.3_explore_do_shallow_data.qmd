@@ -22,6 +22,8 @@ library(RColorBrewer)
 library(readr)
 library(summaryplots)
 
+source(here("functions/subchunkify.R"))
+
 theme_set(theme_light())
 
 dt_options <- list(
@@ -32,17 +34,11 @@ dt_options <- list(
   columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
-
 # summarized data 
 dat <- read_csv(
-  here("data/summary_filtered_data_shallow.csv"), show_col_types = FALSE
+  here("data/3_summary_filtered_data_shallow.csv"), show_col_types = FALSE
 ) %>% 
   filter(variable == "Dissolved Oxygen", units == "percent saturation")
-
-# dat_filt <- read_csv(
-#   here("data/summary_filtered_data.csv"), show_col_types = FALSE
-# ) %>% 
-#   filter(variable == "Dissolved Oxygen", units == "percent saturation")
 
 # station locations
 st_locations <- read_csv(
@@ -51,27 +47,25 @@ st_locations <- read_csv(
 
 county_pal <- get_county_colour_palette(length(unique(st_locations$COUNTY)))
 
+theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 ```
 
 # EXPLORATORY ANALYSIS: DISSOLVED OXYGEN 
 
 **Shallow Data**
 
-**DRAFT April 24, 2023**
+July 25, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
-
-- Only data from <= 6 m
-
+- Depth was rounded to nearest whole number
+  - Results in depth of 0 m for 1042 and Sissiboo.
 - Preliminary QC was applied to the data.
   - Obvious outliers removed.
   - Suspected biofouling removed.
-  - Fresh water and other "outlier" stations not considered.
-    - Piper Lake, Hourglass Lake, 0193 (Denas Pond), Sissiboo
-    - Data from Whycocmagh Bay near or below the oxycline (8, 18, 28, 36 m)
-
-- Depth rounded to nearest whole number
-  - Results in depth of 0 m for 1042 and Sissiboo.
+- Additional QC applied was based on review of 1.1_explore_do_data.html
+  - Fresh water stations not considered.
+    - Piper Lake, Hourglass Lake, Sissiboo
+- Only data from <= 6m considered (> 67 % of obs).
   
 # Station Locations
 
@@ -105,8 +99,8 @@ leaflet(st_locations) %>%
   add_county_fill_legend(county_pal = county_pal)
 ```
 
-- 5 counties have only 1 station with dissolved oxygen data: Antigonish, Colchester, Pictou, Queens, and Richmond.
-- Guysborough has 18 stations with dissolved oxygen data.
+- `r nrow(dat %>% filter(group == "all_station") %>% group_by(county) %>% filter(n() == 1))` counties have only 1 station with dissolved oxygen data: `r x <- dat %>% filter(group == "all_station") %>% group_by(county) %>% filter(n() == 1); paste(x$county, collapse = ", ")`
+- Guysborough has `r nrow(dat %>% filter(group == "all_station", county == "Guysborough") %>% distinct(station))` stations with dissolved oxygen data.
 
 # Gross Range
 
@@ -127,7 +121,7 @@ county <- dat %>%
 ### Figure 1
 ```{r}
 #| fig-height: 8
-#| fig-cap: The number of dissolved oxygens observations in each county. The number at the end of each bar indicates the percent of the total dissolved oxygen observations from the associated county.
+#| fig-cap: The number of dissolved oxygens observations in each county.
 #| fig-cap-location: top
 
 p <- county  %>% 
@@ -160,7 +154,9 @@ county %>%
 ```
 :::
 
-- Average dissolved oxygen in Antigonish is lower than other counties, BUT there is no data for July, August, and September, which typically have the highest DO (Figure 15).
+- Most Inverness observations are in the summer (June, July, August; Figure 14), when DO is typically highest.
+- Antigonish has few observations in the Spring / Summer, when DO is typically highest.
+- Very minor differences in mean, stdev, and user thresholds compared to filtered data.
 
 ## Depth
 
@@ -227,7 +223,8 @@ ggplotly(p)
 #| fig-cap: The number of dissolved oxygen obervations at each depth for each county.
 #| fig-cap-location: top
 
-p <- plot_n_obs_depth(county_depth)
+p <- plot_n_obs_depth(county_depth) +
+  theme_facet_plotly 
 
 ggplotly(p)
 ```
@@ -237,7 +234,8 @@ ggplotly(p)
 #| fig-height: 10
 #| fig-cap: Average dissolved oxygen and standard deviation for each county at each measured depth. 
 
-p <- plot_mean_sd_depth(county_depth, text_size = 12)
+p <- plot_mean_sd_depth(county_depth, text_size = 12) +
+  theme_facet_plotly 
 
 ggplotly(p, tooltip = "text")
 ```
@@ -314,7 +312,7 @@ month %>%
 
 :::
 
-- Fewest dissolved oxygen observations in the spring and summer, likely due to biofouling.
+- Fewest dissolved oxygen observations in the spring and summer, likely due to preliminary QC to remove biofouling.
 
 
 ## Month + Year 
@@ -395,7 +393,7 @@ county_month <- dat %>%
 
 ### Figure 14
 ```{r}
-#| fig-height: 10
+#| fig-height: 12
 #| fig-cap: The number of dissolved oxygen observations in each month for each county.
 #| fig-cap-location: top
 
@@ -480,10 +478,9 @@ ggplotly(p)
 - Fewest dissolved oxygen observations in the spring and summer, likely due to biofouling.
 - Small but noticeable climatological cycle within counties.
 - Very small standard deviations
-- Some influence of number of observations per month impacting the mean.
-  - Mean typically gets higher, because fewer observations in the spring/summer when DO is higher.
+- Some indication that the number of observations per month impacts the mean.
 - 4 counties missing at least 1 month of data (Annapolis, Antigonish, Inverness, Pictou)
-- Colchester: data from June to December was collected in 202 and 2021; data from January to May was collected in 2022 (see Colchester figure in Climatology subsection) 
+- Colchester: data from June to December was collected in 2020 and 2021; data from January to May was collected in 2022 (see Colchester figure in Climatology subsection) 
 
 ## Month + County + Year
 ```{r}
@@ -508,22 +505,26 @@ Figures are not interactive.
 ::: panel-tabset
 
 ```{r}
-#| fig-height: 8
 #| results: "asis"
 
 counties <- unique(county_month_year$county)
 
 for(i in seq_along(counties)){
   
-  county.i <- counties[i]
-  dat.i <- county_month_year %>% filter(county == county.i)
+  county_i <- counties[i]
+  dat_i <- county_month_year %>% filter(county == county_i)
   
-  cat('\n###', county.i, '\n')
+  # height of figure j
+  n_years <- length(unique(dat_i$year))
+  if(n_years <= 3) h = 4
+  if(n_years > 3) h = 8
   
-  p <- plot_n_obs_month(dat.i, text_size = 12) +
-    facet_wrap(~year) 
-
-  print(p)
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_n_obs_month(dat_i, text_size = 12) +
+    facet_wrap(~year, ncol = 3) 
+  
+  subchunkify(p, fig_height = h, fig_width = 8.5)
 }
 ```
 :::
@@ -542,15 +543,15 @@ n_years <- length(unique(county_month_year$year))
 
 for(i in seq_along(counties)){
   
-  county.i <- counties[i]
+  county_i <- counties[i]
   
-  dat.i <- county_month_year %>% 
-    filter(county == county.i)
+  dat_i <- county_month_year %>% 
+    filter(county == county_i)
   
-  cat('\n###', county.i, '\n')
+  cat('\n###', county_i, '\n')
   
   p <- plot_mean_sd_season_ribbon(
-    dat.i, group = "year",
+    dat_i, group = "year",
     n_group = n_years,
     facet_county = FALSE, y_limits = c(60, 130)
   ) 
