@@ -1,4 +1,5 @@
 # April 24, 2023
+# Updated July 25, 2023
 
 # Imports processed Water Quality observations, then filters to exclude
 # freshwater stations and other outliers
@@ -29,24 +30,14 @@ source(here("functions/summarise_grouped_data.R"))
 
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
-  filter(
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
-  ) %>%
-mutate(
+  mutate(
     DEPTH = round(as.numeric(DEPTH)),
     MONTH = month(TIMESTAMP),
-    YEAR = year(TIMESTAMP),
-    COUNTY = case_when(
-      STATION == "Sandy Cove Chedabucto" ~ "Guysborough",
-      STATION == "Sandy Cove St. Marys" ~ "Digby",
-      TRUE ~ COUNTY
-    )
+    YEAR = year(TIMESTAMP)
   ) %>%
   filter(
-    DEPTH <= 6,
-    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) & VARIABLE == "Dissolved Oxygen"),
-    !(STATION == "Ram Island" & TIMESTAMP > as_datetime("2021-10-10") &
-          TIMESTAMP < as_datetime("2021-11-15") & VARIABLE == "Dissolved Oxygen")
+    DEPTH <= 6, # don't put this above becuase DEPTH is a factor
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
   )
 
 # summarize data ----------------------------------------------------------
@@ -96,7 +87,7 @@ dat_out <- bind_rows(
     month = MONTH
   )
 
-write_csv(dat_out, here("data/summary_filtered_data_shallow.csv"))
+write_csv(dat_out, here("data/3_summary_filtered_data_shallow.csv"))
 
 
 
