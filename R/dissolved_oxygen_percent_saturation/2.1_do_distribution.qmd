@@ -39,17 +39,35 @@ dt_options <- list(
 # data - preliminary QC 
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
-  filter(
-    VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation",
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
-    # !(STATION == "Ram Island" &
-    #     TIMESTAMP > as_datetime("2021-10-10")
-    #   & TIMESTAMP < as_datetime("2021-11-15"))
-  ) %>%
+  filter(VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation") %>%
   mutate(
-    DEPTH = round(as.numeric(DEPTH)),
+    DEPTH = factor(round(as.numeric(DEPTH))),
     MONTH = month(TIMESTAMP),
-    YEAR = year(TIMESTAMP)
+    YEAR = factor(year(TIMESTAMP))
+  ) 
+    
+# filtered data
+dat_filt <- dat_all %>% 
+   filter(
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36)),
+    !(COUNTY == "Guysborough" & DEPTH == 60)
+  )
+
+# shallow data
+dat_shallow <- dat_all %>% 
+   filter(
+     DEPTH %in% c(0, 1, 2, 3, 4, 5, 6), # ‘<=’ not meaningful for factors
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
+  )
+
+# dat_strict qc
+exclude <- c("Antigonish", "Colchester", "Digby", "Inverness", "Pictou", "Queens")
+dat_strict <- dat_all %>% 
+  filter(
+    !(COUNTY == "Guysborough" & DEPTH == 60),
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(COUNTY %in% exclude)
   ) 
 
 county_pal <- get_county_colour_palette(length(unique(dat_all$COUNTY)))
@@ -57,32 +75,45 @@ depth_pal <- viridis(length(unique(dat_all$DEPTH)), direction = -1)
 year_pal <- viridis( length(unique(dat_all$YEAR)), option = "C")
 
 theme_facet_plotly <- theme(
-    panel.spacing.y = unit(30, "lines"),
-    panel.spacing.x = unit(20, "lines")
-  )
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
 
 ```
 
 # Dissolved Oxygen Distribution
 
-**DRAFT July 21, 2023**
+DRAFT July 25, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
-
-- Preliminary QC was applied to the data.
-  - Obvious outliers removed.
-  - Suspected biofouling removed.
-  - Fresh water and other "outlier" stations not considered.
-    - Piper Lake, Hourglass Lake, 0193 (Denas Pond), Sissiboo
-
 - Depth rounded to nearest whole number
   - Results in depth of 0 m for 1042 and Sissiboo.
+  
+- Preliminary QC (submitted to Open Data Portal)
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
 
-## Pooled Observations
+- Filtered Data
+  - Fresh water stations not considered.
+    - Piper Lake, Hourglass Lake, Sissiboo
+  - Other "outlier" data series not considered
+    - Data from Whycocmagh Bay near or below the oxycline (8, 18, 28, 36 m)
+    - Tickle Island at 60 m
+
+- Shallow Data
+  - Filtered data, only considering depths <= 6 m
+  
+- Strict QC
+  - Filtered data, plus excludes counties with high proportion of suspect data based on additional manual review (Antigonish, Colchester, Digby, Inverness, Pictou, Queens)
+
+
+## Preliminary QC 
+
+### Pooled
 
 ::: panel-tabset
 
-### Figure 1: All observations
+#### Figure 1: All observations
 ```{r}
 #| label: fig-dist-all
 #| fig-height: 6
@@ -94,51 +125,43 @@ p <- plot_histogram(dat_all, hist_col = VALUE, binwidth = 2) +
 ggplotly(p)
 ```
 
-### Figure 2: All observations by depth
+#### Figure 2: By depth
 ```{r}
 #| label: fig-dist-all-depth
 #| fig-height: 6
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by depth.
 
-p <- ggplot(dat_all, aes(VALUE, fill = factor(DEPTH))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Depth", values = depth_pal) +
-  x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) 
-  
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
 ggplotly(p)
 ```
 
-### Figure 3: All observations by year
+#### Figure 3: By year
 ```{r}
 #| label: fig-dist-all-year
 #| fig-height: 6
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by year.
 
-p <- ggplot(dat_all, aes(VALUE, fill = factor(YEAR))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Year", values = year_pal) +
-  x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) 
-  
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
 ggplotly(p)
 ```
 
 :::
 
-## County
+### County
 
 ::: panel-tabset
 
-### Figure 4: Distribution by county 
+#### Figure 4: County 
 ```{r}
 #| label: fig-dist-county
 #| fig-height: 12
@@ -153,42 +176,32 @@ p <- dat_all %>%
 ggplotly(p)
 ```
 
-### Figure 5: County + Depth
+#### Figure 5: County + Depth
 ```{r}
 #| label: fig-dist-county-depth
 #| fig-height: 12
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county, coloured by depth.
 
-p <- ggplot(dat_all, aes(VALUE, fill = factor(DEPTH))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Depth", values = depth_pal) +
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2, fill_col = DEPTH, pal = depth_pal
+) +
   x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) +
   facet_wrap(~COUNTY, scales = "free", ncol = 3) +
   theme_facet_plotly
   
 ggplotly(p)
 ```
 
-### Figure 6: County + Year
+#### Figure 6: County + Year
 ```{r}
 #| label: fig-dist-county-year
 #| fig-height: 12
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county coloured by year.
 
-p <- ggplot(dat_all, aes(VALUE, fill = factor(YEAR))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Year", values = year_pal) +
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+) +
   x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) +
   facet_wrap(~COUNTY, scales = "free", ncol = 3) +
   theme_facet_plotly
 
@@ -196,7 +209,7 @@ ggplotly(p)
 ```
 :::
 
-## County + Month + Year
+#### County + Month + Year
 
 ::: panel-tabset
 ```{r}
@@ -206,7 +219,7 @@ ggplotly(p)
 counties <- unique(dat_all$COUNTY)
 
 dat_all <- dat_all %>% 
-  mutate(YEAR = factor(YEAR), MONTH = month(MONTH, label = TRUE))
+  mutate(MONTH = month(MONTH, label = TRUE))
 
 for(i in seq_along(counties)){
   
@@ -216,52 +229,27 @@ for(i in seq_along(counties)){
   
   cat('\n###', county_i, '\n')
   
- p <- ggplot(dat_i, aes(VALUE, group = YEAR, fill = YEAR)) +
-    geom_histogram(
-      aes(y = 100 * after_stat(count / sum(count))),
-      binwidth = 2, col = "grey10"
-    ) +
-    scale_x_continuous("Dissolved Oxygen (percent saturation)") +
-    scale_y_continuous(
-      "Percent of Observations", expand = expansion(mult = c(0, 0.1))
-    ) +
-    facet_wrap(~MONTH, ncol = 3)  +
-    scale_fill_manual("Year", values = year_pal, drop = FALSE) +
-    theme(
-      panel.grid = element_blank(),
-      panel.border = element_rect(colour = "grey10"),
-      text = element_text(size = 14)
-    )
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
   
   print(p)
 }
 
 ```
-
 :::
 
-# Additional QC
 
-- Filter out counties Antigonish, Colchester, Digby, Inverness, Pictou, Queens
-  - Antigonish, Colchester, Inverness, Pictou, and Queens only have 2 deployments with dissolved oxygen data. 
-  - Limited "good" observations based on manual review of data.
-  - Prompted by rolling standard deviation plots.
+## Filtered Data
 
-```{r}
-dat_filt <- dat_all %>% 
-  filter(
-    !(COUNTY %in% 
-        c("Antigonish", "Colchester", "Digby", "Inverness", "Pictou", "Queens")
-    ))
-```
-
-## QC Pooled Observations
+### Pooled
 
 ::: panel-tabset
 
-### Figure 7: QC observations
+#### Figure 7: All observations
 ```{r}
-#| label: fig-dist-all-qc
 #| fig-height: 6
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %).
 
@@ -271,56 +259,43 @@ p <- plot_histogram(dat_filt, hist_col = VALUE, binwidth = 2) +
 ggplotly(p)
 ```
 
-### Figure 8: QC observations by depth
-
+#### Figure 8: By depth
 ```{r}
-#| label: fig-dist-all-depth-qc
 #| fig-height: 6
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by depth.
 
-p <- ggplot(dat_filt, aes(VALUE, fill = factor(DEPTH))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Depth", values = depth_pal) +
-  x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) 
-  
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
 ggplotly(p)
 ```
 
-### Figure 9: QC observations by year
-
+#### Figure 9: By year
 ```{r}
-#| label: fig-dist-all-year-qc
 #| fig-height: 6
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by year.
 
-p <- ggplot(dat_filt, aes(VALUE, fill = factor(YEAR))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Year", values = year_pal) +
-  x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) 
-  
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
 ggplotly(p)
 ```
 
 :::
 
-## County
+### County
 
 ::: panel-tabset
 
-### Figure 10: QC county 
+#### Figure 10: County 
 ```{r}
-#| label: fig-dist-county-qc
-#| fig-height: 8
+#| fig-height: 12
 #| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 2 degrees C).
 
 p <- dat_filt %>% 
@@ -332,42 +307,30 @@ p <- dat_filt %>%
 ggplotly(p)
 ```
 
-### Figure 11: QC County + Depth
+#### Figure 11: County + Depth
 ```{r}
-#| label: fig-dist-county-depth-qc
-#| fig-height: 8
+#| fig-height: 12
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county, coloured by depth.
 
-p <- ggplot(dat_filt, aes(VALUE, fill = factor(DEPTH))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Depth", values = depth_pal) +
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2, fill_col = DEPTH, pal = depth_pal
+) +
   x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) +
   facet_wrap(~COUNTY, scales = "free", ncol = 3) +
   theme_facet_plotly
   
 ggplotly(p)
 ```
 
-### Figure 12: QC County + Year
+#### Figure 12: County + Year
 ```{r}
-#| label: fig-dist-county-year-qc
-#| fig-height: 8
+#| fig-height: 12
 #| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county coloured by year.
 
-p <- ggplot(dat_filt, aes(VALUE, fill = factor(YEAR))) +
-  geom_histogram(
-    aes(y = after_stat(100 * count / sum(count))),
-    binwidth = 2, col = "grey10"
-  ) +
-  scale_fill_manual("Year", values = year_pal) +
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+) +
   x_axis +
-  scale_y_continuous(
-    "Percent of Observations", expand = expansion(mult = c(0, 0.1))) +
   facet_wrap(~COUNTY, scales = "free", ncol = 3) +
   theme_facet_plotly
 
@@ -375,7 +338,7 @@ ggplotly(p)
 ```
 :::
 
-## QC County + Month + Year
+#### County + Month + Year
 
 ::: panel-tabset
 ```{r}
@@ -384,8 +347,8 @@ ggplotly(p)
 
 counties <- unique(dat_filt$COUNTY)
 
-# dat_filt <- dat_filt %>% 
-#   mutate(YEAR = factor(YEAR), MONTH = month(MONTH, label = TRUE))
+dat_filt <- dat_filt %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
 
 for(i in seq_along(counties)){
   
@@ -395,82 +358,275 @@ for(i in seq_along(counties)){
   
   cat('\n###', county_i, '\n')
   
- p <- ggplot(dat_i, aes(VALUE, group = YEAR, fill = YEAR)) +
-    geom_histogram(
-      aes(y = 100 * after_stat(count / sum(count))),
-      binwidth = 2, col = "grey10"
-    ) +
-    scale_x_continuous("Dissolved Oxygen (percent saturation)") +
-    scale_y_continuous(
-      "Percent of Observations", expand = expansion(mult = c(0, 0.1))
-    ) +
-    facet_wrap(~MONTH, ncol = 3)  +
-    scale_fill_manual("Year", values = year_pal, drop = FALSE) +
-    theme(
-      panel.grid = element_blank(),
-      panel.border = element_rect(colour = "grey10"),
-      text = element_text(size = 14)
-    )
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
   
   print(p)
 }
 
 ```
-
 :::
 
 
-`r knitr::knit_exit()`
+## Shallow Data
 
+### Pooled
 
+::: panel-tabset
 
+#### Figure 13: All observations
 ```{r}
-## Compare thresholds
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %).
 
-### User Thresholds
+p <- plot_histogram(dat_shallow, hist_col = VALUE, binwidth = 2) +
+  x_axis
 
-thresh_all <- dat_all %>% 
-  summarise(mean = mean(VALUE), stdev = sd(VALUE)) %>% 
-  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev)
-
-thresh_filt <- dat_filt %>% 
-  summarise(mean = mean(VALUE), stdev = sd(VALUE)) %>% 
-  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev)
-
-thresh_all %>% 
-  rbind(thresh_filt) %>% 
-  round(digits = 2) %>% 
-  datatable(options = dt_options, rownames = c("all data", "filtered data"))
-
+ggplotly(p)
 ```
 
-
-
+#### Figure 14: By depth
 ```{r}
-### Climatology Thresholds
-thresh_all_clim <- dat_all %>% 
-  group_by(MONTH) %>% 
-  summarise(mean = mean(VALUE), stdev = sd(VALUE)) %>% 
-  mutate(
-    user_min_all = mean - 3 * stdev, user_max_all = mean + 3 * stdev
-  ) %>% 
-  select(-mean, -stdev)
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by depth.
 
-thresh_filt_clim <- dat_filt %>% 
-  group_by(MONTH) %>%
-  summarise(mean = mean(VALUE), stdev = sd(VALUE)) %>% 
-  mutate(
-    user_min_filt = mean - 3 * stdev, user_max_filt = mean + 3 * stdev
-  ) %>% 
-  select(-mean, -stdev)
+p <- plot_histogram(
+  dat_shallow, hist_col = VALUE, binwidth = 2,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
 
-thresh_all_clim %>% 
-  left_join(thresh_filt_clim, by = "MONTH") %>% 
-  mutate(across(where(is.numeric), .fn = round, digits = 2)) %>% 
-  select(month = MONTH, user_min_all, user_min_filt, user_max_all, user_max_filt) %>%
-  datatable(options = dt_options, rownames = FALSE)
+ggplotly(p)
+```
+
+#### Figure 15: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by year.
+
+p <- plot_histogram(
+  dat_shallow, hist_col = VALUE, binwidth = 2, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 15: County 
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 2 degrees C).
+
+p <- dat_shallow %>% 
+  plot_histogram(hist_col = VALUE, binwidth = 2) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 16: County + Depth
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_shallow, hist_col = VALUE, binwidth = 2, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 17: County + Year
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_shallow, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_filt$COUNTY)
+
+dat_shallow <- dat_shallow %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_shallow %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
 
 ```
+:::
+
+## Strict Data
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 18: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %).
+
+p <- plot_histogram(dat_strict, hist_col = VALUE, binwidth = 2) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 19: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by depth.
+
+p <- plot_histogram(
+  dat_strict, hist_col = VALUE, binwidth = 2,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 20: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), coloured by year.
+
+p <- plot_histogram(
+  dat_strict, hist_col = VALUE, binwidth = 2, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 21: County 
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 2 degrees C).
+
+p <- dat_strict %>% 
+  plot_histogram(hist_col = VALUE, binwidth = 2) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 22: County + Depth
+```{r}
+#| fig-height: 9
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_strict, hist_col = VALUE, binwidth = 2, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 23: County + Year
+```{r}
+#| fig-height: 9
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 2 %), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_strict, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_strict$COUNTY)
+
+dat_strict <- dat_strict %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_strict %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
 
 
 
