@@ -83,7 +83,7 @@ theme_facet_plotly <- theme(
 
 # Dissolved Oxygen Distribution
 
-DRAFT July 25, 2023
+July 28, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
 - Depth rounded to nearest whole number
@@ -552,7 +552,7 @@ ggplotly(p)
 
 #### Figure 21: County 
 ```{r}
-#| fig-height: 12
+#| fig-height: 9
 #| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 2 degrees C).
 
 p <- dat_strict %>% 

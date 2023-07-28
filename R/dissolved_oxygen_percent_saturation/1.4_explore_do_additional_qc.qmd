@@ -66,10 +66,10 @@ July 25, 2023
 - Additional QC applied was based on review of 1.1_explore_do_data.html
   - Fresh water stations not considered.
     - Piper Lake, Hourglass Lake, Sissiboo
-- Additional QC applied was based on distributions in 2.0_do_distribution.html.
+- *Additional QC applied was based on distributions in 3.0_do_rolling_sd.html.
   - Removed counties with limited deployments.
     - Antigonish, Colchester, Inverness, Pictou, Queens
-  - Removed Digby because additional review suggests substantial suspicious observations.
+  - Removed Digby because additional review suggests substantial suspicious observations.*
   
 # Station Locations
 

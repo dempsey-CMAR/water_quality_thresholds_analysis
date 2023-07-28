@@ -57,14 +57,14 @@ July 23, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
 - Depth was rounded to nearest whole number
-  - Results in depth of 0 m for 1042 and Sissiboo.
+  - Results in depth of 0 m for 1042 (Annapolis).
 - Preliminary QC was applied to the data.
   - Obvious outliers removed.
   - Suspected biofouling removed.
 - Additional QC applied was based on review of 1.1_explore_do_data.html
   - Fresh water stations not considered.
     - Piper Lake, Hourglass Lake, Sissiboo
-  - Other "outlier" data series not considered
+  - Other "outlier" data series not considered.
     - Data from Whycocmagh Bay near or below the oxycline (8, 18, 28, 36 m)
     - Tickle Island at 60 m
 
