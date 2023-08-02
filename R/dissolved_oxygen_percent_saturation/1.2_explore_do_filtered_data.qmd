@@ -150,8 +150,7 @@ ggplotly(p, tooltip = "text")
 #| fig-cap-location: top
 
 county %>% 
-  select(county, n, mean, stdev) %>% 
-  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev) %>% 
+  select(county, n, mean, stdev) %>%
   datatable(options = dt_options, rownames = FALSE)
 ```
 :::
