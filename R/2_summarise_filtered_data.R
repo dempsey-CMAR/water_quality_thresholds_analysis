@@ -32,16 +32,21 @@ source(here("functions/summarise_grouped_data.R"))
 
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
-  filter(
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
-  ) %>%
   mutate(
     DEPTH = round(as.numeric(DEPTH)),
     MONTH = month(TIMESTAMP),
     YEAR = year(TIMESTAMP)
   ) %>%
+  # don't move this up because filter uses rounded depths
   filter(
-    # don't move this up because uses rounded depths
+    # Freshwater stations
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+
+    # Temperature
+    !(COUNTY == "Inverness" & DEPTH %in% c(18, 23, 26, 28, 36, 40) &
+        VARIABLE == "Temperature"),
+
+    # Dissolved Oxygen
     !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) &
         VARIABLE == "Dissolved Oxygen"),
     !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen")
