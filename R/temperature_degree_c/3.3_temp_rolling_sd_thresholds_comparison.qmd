@@ -1,0 +1,302 @@
+---
+title: "Temperature: Rolling Standard Deviation Thresholds Comparison"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(data.table)
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(gtools)
+library(here)
+library(lubridate)
+library(plotly)
+library(qaqcmar)
+library(strings)
+library(sensorstrings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+dat_roll <- readRDS(here("data/temp_rolling_sd_prelim_qc.rds")) %>% 
+  select(
+    -c(int_sample, n_sample, 
+       rolling_sd_flag_temperature_degree_c)
+  ) %>% 
+  na.omit() %>% 
+  separate(col = deployment_range, into = c("depl_date", NA), sep = " to ")
+
+# temp thresholds - exported from 3.1_temp_rolling_sd_distribution
+thresholds <- fread(
+  here("output/temperature_rolling_sd_thresholds.csv"), data.table = FALSE) %>% 
+  select(county, contains("q"))
+
+dat_summary <- dat_roll %>% 
+  left_join(thresholds, by = "county") %>% 
+   select(-c(q_97, q_99)) %>% 
+  mutate(
+    thresh_q95 = case_when(
+      sd_roll > q_95 ~ 3,
+      sd_roll <= q_95 ~ 1,
+      is.na(sd_roll) ~ 2),
+    # thresh_q97 = case_when(
+    #   sd_roll > q_97 ~ 3,
+    #   sd_roll <= q_97 ~ 1,
+    #   is.na(sd_roll) ~ 2),
+    # thresh_q99 = case_when(
+    #   sd_roll > q_99 ~ 3,
+    #   sd_roll <= q_99 ~ 1,
+    #   is.na(sd_roll) ~ 2),
+    thresh_q997 = case_when(
+      sd_roll > q_997 ~ 3,
+      sd_roll <= q_997 ~ 1,
+      is.na(sd_roll) ~ 2)
+  ) %>%
+  pivot_longer(
+    cols = contains("thresh"),
+    names_to = "threshold", 
+    values_to = "threshold_value", names_prefix = "thresh_"
+  ) 
+
+county_pal <- get_county_colour_palette(length(unique(dat_roll$county)))
+flag_colours <- c("chartreuse4", "#E6E1BC", "#EDA247", "#DB4325", "grey24")
+ 
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(20, "lines"),
+  panel.spacing.x = unit(15, "lines")
+)
+```
+
+# Temperature: Rolling standard deviation thresholds comparison
+
+August 2, 2023
+
+- This file compares potential rolling standard deviation thresholds.
+
+- Potential thresholds are the upper quantiles (q95 and q99.7) of the county data.
+  - Thresholds were calculated based on the filtered data 
+    - Fresh water and other outlier stations were removed.
+  - q90 was not assessed because based on the preliminary QC, there are fewer suspect rolling standard observations for temperature data compared to the dissolved oxygen data (e.g., temperature is not impacted by biofouling)
+
+- These thresholds are applied to the re-processed data to assess which threshold will be the most useful for automated QC.
+  - No preliminary QC was applied to the reprocessed data.
+
+- It is expected that the rolling standard deviation test will flag observations that are "Suspect", including sensors that are exposed to the air and spike values, and observations that are "Of Interest", e.g., rapid changes caused by storms and upwelling.
+
+- Potential thresholds:
+```{r}
+thresholds %>% 
+  select(county, q_95, q_997) %>% 
+  filter(county != "All") %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+## Pooled
+
+The percent of all observations flagged with each potential threshold.
+
+::: panel-tabset
+
+### Figure 1
+```{r}
+summary_all <- dat_summary %>%
+  group_by(threshold) %>%
+  summarise(n_obs = n(), n_suspect = sum(threshold_value == 3)) %>%
+  mutate(percent_suspect = round((100 * n_suspect / n_obs), digits = 3)) %>%
+  ungroup()
+
+p <- ggplot(summary_all, aes(percent_suspect, threshold)) +
+  geom_col(
+    col = 1, fill = "#AE1759FF",
+    position = position_dodge2(preserve = "single", padding = 0)
+  ) +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(
+    "Percent of Observations", expand = expansion(mult = c(0, 0.1))
+  ) +
+  scale_y_discrete(name = "Threshold", limits = rev)
+
+ggplotly(p)
+```
+
+### Table 1
+```{r}
+datatable(
+  summary_all,
+  options = list(
+    dom = 'ft',
+    paging = FALSE,
+    searching = FALSE,
+    columnDefs = list(list(className = 'dt-center', targets = "_all"))), rownames = FALSE)
+```
+
+:::
+
+## By County
+
+The percent of observations within each county flagged with each potential threshold.
+
+::: panel-tabset
+
+### Figure 2
+```{r}
+#| fig-height: 12
+#| message: false
+
+summary_county <- dat_summary %>%
+  group_by(county, threshold) %>%
+  summarise(n_obs = n(), n_suspect = sum(threshold_value == 3)) %>%
+  mutate(percent_suspect = round((100 * n_suspect / n_obs), digits = 3)) %>%
+  ungroup()
+
+p <- ggplot(summary_county, aes(percent_suspect, threshold)) +
+  geom_col(
+    col = 1, fill = "#AE1759FF",
+    position = position_dodge2(preserve = "single", padding = 0)
+  ) +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(
+    "Percent of Observations", expand = expansion(mult = c(0, 0.1))
+  ) +
+  scale_y_discrete(name = "Threshold", limits = rev) +
+  facet_wrap(~county, ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+### Table 2
+```{r}
+summary_county %>%
+  select(-c(n_obs, n_suspect)) %>%
+  pivot_wider(names_from = "threshold", values_from = "percent_suspect") %>%
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+:::
+
+## By Deployment
+
+The percent of observations within each deployment flagged with each potential threshold.
+
+The `diff` column shows difference between the percent of observations flagged with the q_95 threshold and the q_997 threshold.
+
+### Table 3
+```{r}
+#| message: false
+
+summary_depl <- dat_summary %>%
+  group_by(county, station, depl_date, threshold) %>%
+  summarise(n_obs = n(), n_suspect = sum(threshold_value == 3)) %>%
+  mutate(percent_suspect = round((100 * n_suspect / n_obs), digits = 3)) %>%
+  ungroup() %>% 
+  select(-c(n_obs, n_suspect)) %>% 
+  pivot_wider(names_from = "threshold", values_from = "percent_suspect") %>%
+  mutate(
+    diff = q95 - q997,
+    across(where(is.numeric), .fn = round, digits = 2)
+  ) 
+
+summary_depl %>% 
+   datatable(options = dt_options, rownames = FALSE)
+```
+
+</br>
+
+## Deployments with Largest `diff`
+
+These figures show the flagged observations for each threshold for the deployments with the largest difference between thresholds.
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+depl <- summary_depl %>% 
+  arrange(desc(diff)) %>% 
+  filter(diff >= 20)
+
+thresh_plot <- unique(dat_summary$threshold)
+
+for(i in 1:nrow(depl)){
+
+  depl_i <- depl[i, 1:3]
+  
+  cat('\n###', paste(depl_i$station, depl_i$depl_date), '\n')
+  
+  for(j in seq_along(thresh_plot)) {
+    
+    cat('\n####', thresh_plot[j], '\n')
+    
+    dat_j <-  dat_summary %>% 
+      filter(
+        station == depl_i$station, 
+        depl_date == depl_i$depl_date, 
+        threshold == thresh_plot[j])  %>%
+      mutate(
+        depth = paste0(
+          sensor_depth_at_low_tide_m, " m", 
+          " (", sensor_serial_number, ")"),
+        depth = ordered(depth, levels = gtools::mixedsort(unique(depth)))
+      ) %>% 
+      rename(sd_rolling_flag_value = threshold_value) %>% 
+      qc_assign_flag_labels() 
+    
+    # height of figure j
+    n_sensor <- length(unique(dat_j$sensor_serial_number))
+    
+    if(n_sensor == 1) h = 2.75
+    if(n_sensor > 1) h = 2.75 * n_sensor
+    
+    p <- ggplot(
+      dat_j, 
+      aes(timestamp_utc, value_temperature_degree_c, 
+          colour = sd_rolling_flag_value )
+      ) +
+      geom_point()+
+      scale_y_continuous("Temperature (degrees c)") +
+      scale_x_datetime("Date") +
+      scale_colour_manual("Flag Value", values = flag_colours, drop = FALSE) +
+      facet_wrap(~depth, ncol = 1) +
+      theme_light() +
+      theme(
+        legend.position = "none",
+        strip.text = element_text(colour = "black", size = 10),
+        strip.background = element_rect(fill = "white", colour = "darkgrey")
+      ) 
+    
+    subchunkify(p, fig_height = h, fig_width = 8.5)
+    
+  }
+}
+```
+:::
+
+
+
+
+
+
+
+

@@ -22,6 +22,8 @@ library(RColorBrewer)
 library(readr)
 library(summaryplots)
 
+source(here("functions/subchunkify.R"))
+
 theme_set(theme_light())
 
 dt_options <- list(
@@ -32,10 +34,9 @@ dt_options <- list(
   columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
-
 # summarized data 
 dat <- read_csv(
-  here("data/summary_filtered_data.csv"), show_col_types = FALSE
+  here("data/2_summary_filtered_data.csv"), show_col_types = FALSE
 ) %>% 
   filter(variable == "Temperature")
 
@@ -45,22 +46,28 @@ st_locations <- read_csv(
 )
 
 county_pal <- get_county_colour_palette(length(unique(st_locations$COUNTY)))
+
+theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 ```
 
 # EXPLORATORY ANALYSIS: TEMPERATURE
 
-**DRAFT April 24, 2023**
+July 26, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
-
+- Depth rounded to nearest whole number
+  - Results in depth of 0 m for 1042 (Annapolis), Captains Pond (Antigonish), Ile due Havre (Antigonish), Sober Island (Halifax), and Back Harbour (Pictou).
 - Preliminary QC was applied to the data.
   - Obvious outliers removed.
+- Additional QC applied was based on review of 1.1_explore_temp_data.html
   - Fresh water and other "outlier" stations not considered.
     - Piper Lake, Hourglass Lake, 0193 (Denas Pond), Sissiboo
+    - Data below the thermocline in Whycocomagh Bay 
+      - 0814x East and 0814x West, Whycocomagh Basin: 18 m
+      - Aberdeen, Whycocomagh Bay: 18, 23, and 28 m
+      - Deep Basin, Whycocomagh Basin: 26, 36, and 40 m
 
-- Depth rounded to nearest whole number
-  - Results in depth of 0 m for 1042, Captains Pond, Ile due Havre, Sober Island, and Back Harbour.
-  
+    
 # Station Locations
 
 Approximate location of stations with temperature data.
@@ -211,7 +218,8 @@ ggplotly(p)
 #| fig-cap: The number of temperature obervations at each depth for each county.
 #| fig-cap-location: top
 
-p <- plot_n_obs_depth(county_depth)
+p <- plot_n_obs_depth(county_depth) +
+   theme_facet_plotly
 
 ggplotly(p)
 ```
@@ -221,7 +229,8 @@ ggplotly(p)
 #| fig-height: 10
 #| fig-cap: Average temperature and standard deviation for each county at each measured depth. 
 
-p <- plot_mean_sd_depth(county_depth, text_size = 12)
+p <- plot_mean_sd_depth(county_depth, text_size = 12) +
+   theme_facet_plotly
 
 ggplotly(p, tooltip = "text")
 ```
@@ -250,14 +259,19 @@ ggplotly(p)
 ```
 :::
 
-- Could group depths before average, but how to group? 15 m could be bottom for 1 station and middle of water column for another.
-  - If depth matters, then station matters too.
-- Digby 31 m: measured at Long Island from January - May; 32 m: measured at Long Island 2 from July - November.
-- Guysborough 11 m: only measured for Tanner Island and English Harbour in Winter 2019 (February - March). Bottom temp.
-- Inverness: only one deployment for many depths
-- Lunenburg: clear decease in temperature at depth.
-- Shelburne 16 m: measured at Ingomar from Janurary - May, then only at 15 m
-- Victoria: not a lot of difference in temperature through the water column
+- Digby 
+  - 31 m: measured at Long Island from January - May (cold months).
+  - 32 m: measured at Long Island 2 from July - November (warm months).
+  - Monthly climatology for Digby looks reasonable (Figure 15, 16).
+  - Removing these data series has a negligible impact on the distribution of observations, mean, standard deviation, and user thresholds (not shown).
+- Guysborough 
+  - 11 m: measured at Tanner Island and English Harbour in February - March 2019 (cold months). This is the near-bottom temperature for both stations.
+  - Monthly climatology for Guysborough looks reasonable (Figure 15, 16).
+- Inverness: only one deployment for many depths.
+- Lunenburg: clear decrease in temperature at depth.
+- Shelburne
+  - 16 m: measured at Ingomar from January - May (cold months), then sensor moved to 15 m
+- Victoria: not a lot of difference in temperature through the water column.
 
 # Climatology
 
@@ -293,6 +307,17 @@ p <- plot_mean_sd_season(month, facet_county = FALSE)
 
 ggplotly(p)
 
+```
+
+### Table 2
+```{r}
+#| fig-cap: Summary statistics of temperature observations.
+#| fig-cap-location: top
+
+month %>% 
+  select(month, n, mean, stdev) %>% 
+  mutate(season_min = mean - 3 * stdev, season_max = mean + 3 * stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
 ```
 :::
 
@@ -353,8 +378,7 @@ ggplotly(p, tooltip = "text")
 
 ```
 
-### Table 2
-
+### Table 3
 ```{r}
 month_year %>% 
   select(year, month, n, mean, stdev) %>% 
@@ -380,7 +404,7 @@ county_month <- dat %>%
 
 ### Figure 14
 ```{r}
-#| fig-height: 10
+#| fig-height: 12
 #| fig-cap: The number of temperature observations in each month for each county.
 #| fig-cap-location: top
 
@@ -522,24 +546,26 @@ Figures are not interactive.
 ::: panel-tabset
 
 ```{r}
-#| fig-height: 8
 #| results: "asis"
 
 counties <- unique(county_month_year$county)
 
 for(i in seq_along(counties)){
   
-  county.i <- counties[i]
-  dat.i <- county_month_year %>% 
-    filter(county == county.i)
+  county_i <- counties[i]
+  dat_i <- county_month_year %>% filter(county == county_i)
   
-  cat('\n###', county.i, '\n')
+  # height of figure j
+  n_years <- length(unique(dat_i$year))
+  if(n_years <= 3) h = 4
+  if(n_years > 3) h = 8
   
-  p <- plot_n_obs_month(dat.i, text_size = 12) +
-    facet_wrap(~year) 
+  cat('\n###', county_i, '\n')
   
-  print(p)
+  p <- plot_n_obs_month(dat_i, text_size = 12) +
+    facet_wrap(~year, ncol = 3) 
   
+  subchunkify(p, fig_height = h, fig_width = 8.5)
 }
 ```
 :::
@@ -580,10 +606,6 @@ for(i in seq_along(counties)){
 ```
 :::
 
-- Climatology should probably be resolved by county, even though there are only 1 - 2 years of data for some months / counties. Counties with deep sensors (e.g., Guysborough, Shelburne) are substantially colder than counties with shallow sensors (e.g., Antigonish, Colchester), especially in the summer.
-
-- Consider grouping some counties together to increase the number of years the threshold is based on.
-
 ## Month + County + Depth
 ```{r}
 county_month_depth <- dat %>% 
@@ -606,30 +628,26 @@ Figures are not interactive.
 ::: panel-tabset
 
 ```{r}
-#| fig-height: 8
 #| results: "asis"
 
 counties <- unique(county_month_depth$county)
 
 for(i in seq_along(counties)){
-
-  county.i <- counties[i]
-  dat.i <- county_month_depth %>% filter(county == county.i)
-
-  cat('\n###', county.i, '\n')
-
-  # p <- ggplot(dat.i, aes(n, month)) +
-  #   geom_col(
-  #     position = position_dodge2(preserve = "single", reverse = TRUE, padding = 0)
-  #   ) +
-  #   scale_y_discrete(name = "", limits = rev) +
-  #   scale_x_continuous("Number of Temperature Observations") +
-  #   facet_wrap(~ depth)
   
-  p <- plot_n_obs_month(dat.i, text_size = 12) +
-    facet_wrap(~depth) 
-
-  print(p)
+  county_i <- counties[i]
+  dat_i <- county_month_depth %>% filter(county == county_i)
+  
+  # height of figure j
+  n_depth <- length(unique(dat_i$depth))
+  if(n_years <= 3) h = 4
+  if(n_years > 3) h = 8
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_n_obs_month(dat_i, text_size = 12) +
+    facet_wrap(~depth, ncol = 3) 
+  
+  subchunkify(p, fig_height = h, fig_width = 8.5)
 }
 ```
 :::
@@ -646,7 +664,7 @@ zero_obs <- county_month_depth %>%
 
 There are `r nrow(zero_obs)` month-county-depth combinations without any observations.
 
-### Table 3
+### Table 4
 
 Month-county-depth combinations with zero observations.
 

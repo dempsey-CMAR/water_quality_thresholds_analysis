@@ -1,8 +1,7 @@
-# July 20, 2023
+# July 28, 2023
 
 # preliminary qc:
-## Data sent to Open Data Portal (biofouling trimmed by humans)
-## Additional
+## Data sent to Open Data Portal
 
 library(dplyr)
 library(here)
@@ -13,23 +12,56 @@ library(sensorstrings)
 library(strings)
 library(tidyr)
 
-# all data - preliminary QC (leave Inverness in)
-dat_raw <- import_strings_data(input_path = here("data-raw")) %>%
-  filter(
-    VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation",
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
-    # !(STATION == "Ram Island" &
-    #     TIMESTAMP > as_datetime("2021-10-10")
-    #   & TIMESTAMP < as_datetime("2021-11-15"))
-  ) %>%
+# Guysborough
+dat_raw1 <- import_strings_data(
+  input_path = here("data-raw"),
+  county = "Guysborough"
+) %>%
+  filter(VARIABLE == "Temperature") %>%
   mutate(DEPTH = round(as.numeric(DEPTH))) %>%
   ss_reformat_old_data() %>%
   select(-c(waterbody, lease, latitude, longitude, string_configuration))
 
+# Lunenburg
+dat_raw2 <- import_strings_data(
+  input_path = here("data-raw"),
+  county = "Lunenburg"
+) %>%
+  filter(VARIABLE == "Temperature") %>%
+  mutate(DEPTH = round(as.numeric(DEPTH))) %>%
+  ss_reformat_old_data() %>%
+  select(-c(waterbody, lease, latitude, longitude, string_configuration))
+
+# remaining counties
+counties <- c("Annapolis", "Antigonish", "Colchester",
+              "Digby", "Inverness",
+              "Halifax", "Pictou", "Queens",
+              "Richmond", "Shelburne", "Victoria", "Yarmouth")
+
+dat_raw3 <- import_strings_data(
+    input_path = here("data-raw"),
+    county = counties
+  ) %>%
+  filter(VARIABLE == "Temperature") %>%
+  mutate(DEPTH = round(as.numeric(DEPTH))) %>%
+  ss_reformat_old_data() %>%
+  select(-c(waterbody, lease, latitude, longitude, string_configuration))
+
+
 # calculate rolling standard deviation ------------------------------------
-# this takes about 10 -15 mins to run
-dat_raw_qc <- dat_raw %>%
+# this takes a while to run
+dat_raw_qc1 <- dat_raw1 %>%
   qc_test_rolling_sd(keep_sd_cols = TRUE)
+
+dat_raw_qc2 <- dat_raw2 %>%
+  qc_test_rolling_sd(keep_sd_cols = TRUE)
+
+dat_raw_qc3 <- dat_raw3 %>%
+  qc_test_rolling_sd(keep_sd_cols = TRUE)
+
+#rm(dat_raw1, dat_raw2, dat_raw3)
+
+dat_raw_qc <- bind_rows(dat_raw_qc1, dat_raw_qc2, dat_raw_qc3)
 
 # check n_int and n_sample ------------------------------------------------
 ## for very large int_sample (e.g. data gaps):
@@ -65,6 +97,6 @@ obs <- dat_raw_qc %>%
 
 
 # rexport ------------------------------
- saveRDS(dat_raw_qc, here("data/do_rolling_sd_prelim_qc.rds"))
+saveRDS(dat_raw_qc, here("data/temp_rolling_sd_prelim_qc.rds"))
 
 

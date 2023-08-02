@@ -14,6 +14,7 @@ params:
 ```{r, set-up, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
 
+library(data.table)
 library(dplyr)
 library(DT)
 library(ggplot2)
@@ -24,7 +25,6 @@ library(sensorstrings)
 library(strings)
 library(tgc)
 library(tidyr)
-library(zoo)
 
 source(here("functions/subchunkify.R"))
 
@@ -39,14 +39,18 @@ dt_options <- list(
       columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
+thresholds_county <- fread(here("output/temperature_rolling_sd_thresholds.csv")) %>% 
+  pivot_longer(cols = c(-"county"), names_to = "threshold", values_to = "threshold_value") %>% 
+  mutate(county = tolower(county)) %>% 
+  filter(county == params$county, threshold == params$thresh)
+
 county <- params$county
-thresh <- params$thresh
+
+thresh <- thresholds_county$threshold_value
 
 path <- file.path("Y:/coastal_monitoring_program/data_branches/water_quality/processed_data/deployment_data")
 
 path <- paste0(path, "/", county, "/new")
-
-#path <- here("data-raw")
 
 ```
 
@@ -58,55 +62,36 @@ dat <- list.files(path, full.names = TRUE, pattern = ".rds") %>%
   list_rbind() %>% 
   select(
     -c(waterbody, lease, latitude, longitude, string_configuration, 
-       contains("temperature"), contains("salinity"), contains("uncorrected"),
+       contains("dissolved_oxygen"), contains("salinity"), contains("uncorrected"),
        contains("sensor_depth_measured")
     )
   ) 
-
-n_hours <- 24
+  
 
 if(!is.numeric(thresh)) stop(paste0("threshold must be numeric, not: ", thresh))
 
 dat_qc <- dat %>% 
-  qc_test_rate_of_change(
-    rate_of_change_table = data.frame(
-      variable = "dissolved_oxygen_percent_saturation",
+  qc_test_rolling_sd(
+    rolling_sd_table = data.frame(
+      variable = "temperature_degree_c",
       stdev_max = thresh
     )
-   # keep_sd_cols = TRUE
   )
-  # group_by(county, station, deployment_range, sensor_serial_number, variable) %>% 
-  # mutate(
-  #   # sample interval
-  #   int_sample = difftime(timestamp_utc, lag(timestamp_utc), units = "mins"),
-  #   int_sample = round(as.numeric(int_sample)),
-  # 
-  #   # number of samples in n_hours period
-  #   n_sample = (60 / int_sample) * n_hours,
-  #   n_sample = if_else(is.na(n_sample), 1, n_sample), # first obs
-  # 
-  #   # backwards rolling sd
-  #   sd_roll = rollapplyr(value, width = n_sample, FUN = sd, fill = NA),
-  # 
-  #   flag_sd = if_else(sd_roll > thresh, 3, 1),
-  #   flag_sd = if_else(is.na(flag_sd), 2, flag_sd)
-  #   ) %>% 
-  # ungroup() 
 
 # summarise flagged observations
 qc_summary <- dat_qc %>%
-  rename(rate_of_change_flag = rate_of_change_flag_dissolved_oxygen_percent_saturation) %>%
+  rename(rolling_sd_flag = rolling_sd_flag_temperature_degree_c) %>%
   qc_assign_flag_labels() %>%
-  group_by(deployment_range, station, rate_of_change_flag) %>%
+  group_by(deployment_range, station, rolling_sd_flag) %>%
   summarise(flag_count = n()) %>%
   mutate(flag_percent = round((100 * flag_count / sum(flag_count)), digits = 3)) %>%
   ungroup() %>%
   select(-flag_count) %>%
-  pivot_wider(names_from = "rate_of_change_flag", values_from = "flag_percent") %>%
+  pivot_wider(names_from = "rolling_sd_flag", values_from = "flag_percent") %>%
   arrange(station, deployment_range)
 ```
 
-# `r county` QC Flags: Dissolved Oxygen, Rate of Change
+# `r county` QC Flags: Temperature, Rolling standard deviation
 
 `r Sys.Date()`
 
@@ -119,16 +104,18 @@ Percent of observations in each deployment assigned with each qc flag.
 datatable(qc_summary, options = dt_options, rownames = FALSE)
 ```
 
+threshold: `r thresh`
+
 # Figures
 
 ```{r, body} 
 #| results: 'asis'
 #| message: FALSE
 
-#if("Suspect/Of Interest" %in% colnames(qc_summary)) {
+if("Suspect/Of Interest" %in% colnames(qc_summary)) {
   
   depl_id <- qc_summary %>%
-  #  filter(!is.na(`Suspect/Of Interest`)) %>% 
+    filter(!is.na(`Suspect/Of Interest`)) %>% 
     distinct(deployment_range, station) 
   
   stations <- unique(depl_id$station)
@@ -152,7 +139,7 @@ datatable(qc_summary, options = dt_options, rownames = FALSE)
       # subset data to station of interest
       dat_j <- dat_qc %>%
         filter(station == station_i, deployment_range == depl_j) %>%
-        qc_pivot_longer(qc_tests = "rate_of_change") %>% 
+        qc_pivot_longer(qc_tests = "rolling_sd") %>% 
         ss_convert_depth_to_ordered_factor()
       
       # height of figure j
@@ -163,7 +150,7 @@ datatable(qc_summary, options = dt_options, rownames = FALSE)
       
       
       p <- qc_plot_flags(dat_j)
-      p <- p$dissolved_oxygen_percent_saturation$rate_of_change
+      p <- p$temperature_degree_c$rolling_sd
 
         # ggplot(dat_j, aes(timestamp_utc, value, col = factor(flag_sd))) +
         # geom_point(size = 0.5) +
@@ -179,6 +166,6 @@ datatable(qc_summary, options = dt_options, rownames = FALSE)
       cat('\n')
     }
   }
-
+}
 
 ```

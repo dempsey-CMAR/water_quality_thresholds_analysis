@@ -43,6 +43,7 @@ n_sample <- dat_raw_qc %>%
   arrange(desc(int_sample))
 
 # when int_sample > 2 hours, N_sample_effective should = 0, and sd_roll = NA
+# no large sample intervals for reprocessed data (because biofouling not trimmed)
 large_int <- dat_raw_qc %>%
   filter(int_sample > 120) %>%  # 120 mins
   distinct(

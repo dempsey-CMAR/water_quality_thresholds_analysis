@@ -8,6 +8,7 @@ editor_options:
   chunk_output_type: console
 params: 
   county: county
+  thresh: thresh
 ---
 
 ```{r, set-up, include=FALSE}
@@ -15,83 +16,79 @@ knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
 
 library(dplyr)
 library(DT)
-library(here)
 library(ggplot2)
-library(lubridate)
+library(here)
+library(purrr)
 library(qaqcmar)
-library(readr)
 library(sensorstrings)
-library(stringr)
 library(strings)
+library(tgc)
 library(tidyr)
+library(zoo)
 
 source(here("functions/subchunkify.R"))
 
 theme_set(theme_light())
+flag_colours <- c("chartreuse4", "#E6E1BC", "#EDA247", "#DB4325", "grey24")
 
 dt_options <- list(
       dom = 'ft',
       paging = FALSE,
       searching = TRUE,
-      scrollY = "500px",
       pageLength = 500,
       columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
 county <- params$county
+thresh <- params$thresh
+
+path <- file.path("Y:/coastal_monitoring_program/data_branches/water_quality/processed_data/deployment_data")
+
+path <- paste0(path, "/", county, "/new")
+
 ```
 
 ```{r, import-data}
 #| message: FALSE
 
-# read in county data
-dat <- import_strings_data(
-  input_path = here("data-raw"),
-  county = county,
-  add_county_col = FALSE
-) %>%
-  filter(VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation") %>% 
-  ss_reformat_old_data() %>% 
-  select(-c(waterbody, lease, latitude, longitude, mooring_type))
-  
-thresh <- read_csv(here("data/do_climatology_thresholds_4sd.csv"), show_col_types = FALSE)
+dat <- list.files(path, full.names = TRUE, pattern = ".rds") %>% 
+  purrr::map(readRDS) %>% 
+  list_rbind() %>% 
+  select(
+    -c(waterbody, lease, latitude, longitude, string_configuration, 
+       contains("temperature"), contains("salinity"), contains("uncorrected"),
+       contains("sensor_depth_measured")
+    )
+  ) 
 
-# apply climatology test
-dat_qc <- qc_test_climatology(dat, climatology_table = thresh) %>% 
-  group_by(station, deployment_range) %>%
-  mutate(depl_id = cur_group_id()) %>%
-  ungroup()
+n_hours <- 24
+
+if(!is.numeric(thresh)) stop(paste0("threshold must be numeric, not: ", thresh))
+
+dat_qc <- dat %>% 
+  qc_test_rolling_sd(
+    rolling_sd_table = data.frame(
+      variable = "dissolved_oxygen_percent_saturation",
+      stdev_max = thresh
+    )
+  )
 
 # summarise flagged observations
 qc_summary <- dat_qc %>%
-  rename(climatology_flag = climatology_flag_dissolved_oxygen_percent_saturation) %>%
+  rename(rolling_sd_flag = rolling_sd_flag_dissolved_oxygen_percent_saturation) %>%
   qc_assign_flag_labels() %>%
-  group_by(deployment_range, station, climatology_flag) %>%
+  group_by(deployment_range, station, rolling_sd_flag) %>%
   summarise(flag_count = n()) %>%
   mutate(flag_percent = round((100 * flag_count / sum(flag_count)), digits = 3)) %>%
   ungroup() %>%
   select(-flag_count) %>%
-  pivot_wider(names_from = "climatology_flag", values_from = "flag_percent") %>%
+  pivot_wider(names_from = "rolling_sd_flag", values_from = "flag_percent") %>%
   arrange(station, deployment_range)
 ```
 
-# `r county` QC Flags: Dissolved Oxygen, Climatology
+# `r county` QC Flags: Dissolved Oxygen, Rolling Standard Deviation
 
 `r Sys.Date()`
-
-# Climatology Table
-
-```{r}
-# display thresholds used
-thresh %>% 
-  datatable(
-    options = list(
-      dom = 'ft', paging = FALSE, searching = FALSE,
-      columnDefs = list(list(className = 'dt-center', targets = "_all"))
-    ), 
-    rownames = FALSE
-  )
-```
 
 # Summary Table
 
@@ -107,10 +104,10 @@ datatable(qc_summary, options = dt_options, rownames = FALSE)
 #| results: 'asis'
 #| message: FALSE
 
-if("Suspect/Of Interest" %in% colnames(qc_summary)) {
+#if("Suspect/Of Interest" %in% colnames(qc_summary)) {
   
   depl_id <- qc_summary %>%
-    filter(!is.na(`Suspect/Of Interest`)) %>% 
+  #  filter(!is.na(`Suspect/Of Interest`)) %>% 
     distinct(deployment_range, station) 
   
   stations <- unique(depl_id$station)
@@ -134,26 +131,29 @@ if("Suspect/Of Interest" %in% colnames(qc_summary)) {
       # subset data to station of interest
       dat_j <- dat_qc %>%
         filter(station == station_i, deployment_range == depl_j) %>%
+        qc_pivot_longer(qc_tests = "rolling_sd") %>% 
         ss_convert_depth_to_ordered_factor()
       
       # height of figure j
-      n_depth <- length(unique(dat_j$sensor_depth_at_low_tide_m))
+      n_sensor <- length(unique(dat_j$sensor_serial_number))
       
-      if(n_depth == 1) h = 2.75
-      if(n_depth > 1) h = 2.75 * n_depth
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
       
-      p <- qc_plot_flags(dat_j, qc_tests = "climatology", ncol = 1)
-      #p <- p$dissolved_oxygen_percent_saturation
       
+      p <- qc_plot_flags(dat_j)
+      p <- p$dissolved_oxygen_percent_saturation$rolling_sd
+
+    
       cat('\n###', depl_j, '\n')
       
-      subchunkify(p$dissolved_oxygen_percent_saturation$climatology, fig_height = h, fig_width = 8.5)
+      subchunkify(p, fig_height = h, fig_width = 8.5)
       
       #cat(paste("Figure ", k, ": ", station.j, fig.caption,  sep = ""), '\n')
       
       cat('\n')
     }
   }
-}
+
 
 ```

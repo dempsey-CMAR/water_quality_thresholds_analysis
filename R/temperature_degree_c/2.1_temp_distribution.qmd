@@ -1,0 +1,456 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(strings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Temperature (degree C)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# preliminary QC
+dat_all <- import_strings_data(input_path = here("data-raw")) %>%
+  select(COUNTY, WATERBODY, STATION, DEPLOYMENT_PERIOD,
+         TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
+  filter(VARIABLE == "Temperature") %>%
+  mutate(
+    DEPTH = factor(round(as.numeric(DEPTH))),
+    MONTH = month(TIMESTAMP),
+    YEAR = factor(year(TIMESTAMP))
+  ) 
+
+# filtered data
+dat_filt <- dat_all %>% 
+  filter(
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(COUNTY == "Inverness" & DEPTH %in% c(18, 23, 26, 28, 36, 40)) 
+  )
+         
+county_pal <- get_county_colour_palette(length(unique(dat_all$COUNTY)))
+depth_pal <- viridis(length(unique(dat_all$DEPTH)), direction = -1)
+year_pal <- viridis( length(unique(dat_all$YEAR)), option = "C")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+```
+
+# Temperature Distribution
+
+July 26, 2023
+
+- Data submitted to the Open Data Portal in December 2022.
+- Depth rounded to nearest whole number
+  - Results in depth of 0 m for 1042, Captains Pond, Ile due Havre, Sober Island, and Back Harbour.
+  
+- Preliminary QC (submitted to Open Data Portal)
+  - Obvious outliers removed.
+
+- Filtered Data
+  - Fresh water and other "outlier" stations not considered.
+    - Piper Lake, Hourglass Lake, 0193 (Denas Pond), Sissiboo
+  - Data below the thermocline in Whycocomagh Bay
+    - 0814x East and 0814x West, Whycocomagh Basin: 18 m
+    - Aberdeen, Whycocomagh Bay: 18, 23, and 28 m
+    - Deep Basin, Whycocomagh Basin: 26, 36, and 40 m
+
+## Preliminary QC 
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 1: All observations
+```{r}
+#| label: fig-dist-all
+#| fig-height: 6
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C).
+
+p <- plot_histogram(dat_all, hist_col = VALUE, binwidth = 2) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 2: By depth
+```{r}
+#| label: fig-dist-all-depth
+#| fig-height: 6
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 3: By year
+```{r}
+#| label: fig-dist-all-year
+#| fig-height: 6
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 4: County 
+```{r}
+#| label: fig-dist-county
+#| fig-height: 12
+#| fig-cap: Distribution of temperature observations by county (binwidth = 2 degrees C).
+
+p <- dat_all %>% 
+  plot_histogram(hist_col = VALUE, binwidth = 2) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 5: County + Depth
+```{r}
+#| label: fig-dist-county-depth
+#| fig-height: 12
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 6: County + Year
+```{r}
+#| label: fig-dist-county-year
+#| fig-height: 12
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_all$COUNTY)
+
+dat_all <- dat_all %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_all %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+### Investigate Inverness
+
+Bi-modal distribution (Figure 5) is likely caused by the observations from Whycocomagh Basin below the thermocline (0814x East, 0814x West, Aberdeen, and Deep Basin). Many of these sensors recorded every 1 - 2 minutes, and so the temperatures from these deployments are disproportionately represented (Table 1).
+
+Ideally, there would be separate thresholds for above and below the thermocline, but this specificity is beyond the current scope of the program.
+
+#### Table 1 
+
+Number of Observations Per Deployment and Depth
+```{r}
+inv <- dat_all %>% 
+  filter(COUNTY == "Inverness", STATION != "0193")  
+
+inv_int <- inv %>% 
+  separate(
+    DEPLOYMENT_PERIOD, 
+    into = c("DEPL_START", "DEPL_END"), sep = " to ",
+    remove = FALSE) %>% 
+  mutate(
+    DEPL_START = as_date(DEPL_START),
+    DEPL_END = as_date(DEPL_END),
+    DEPL_LENGTH_WEEKS = difftime(DEPL_END, DEPL_START, units = "weeks"),
+    DEPL_LENGTH_WEEKS = round(as.numeric(DEPL_LENGTH_WEEKS), digits = 2)
+  ) %>% 
+  group_by(STATION, DEPLOYMENT_PERIOD, DEPTH) %>% 
+  mutate(
+    INT_MINS = as.numeric(difftime(TIMESTAMP, lag(TIMESTAMP), units = "mins")),
+    INT_MINS = round(INT_MINS, digits = 2),
+    n_obs = n()
+  ) %>% 
+  ungroup() %>% 
+  distinct(STATION, DEPL_START, DEPTH, INT_MINS, n_obs, .keep_all = TRUE) %>% 
+  na.omit() %>% 
+  select(station = STATION,
+         depl_start = DEPL_START, 
+         depl_weeks = DEPL_LENGTH_WEEKS, 
+         depth = DEPTH, 
+         int_mins = INT_MINS, 
+         n_obs) %>% 
+  mutate(obs_per_week = round(n_obs / depl_weeks, digits = 2)) %>% 
+  arrange(obs_per_week)
+
+datatable(inv_int, options = dt_options, rownames = FALSE)
+```
+
+#### Threshold Comparison
+```{r}
+inv_thresh <- inv %>% 
+  group_by(MONTH) %>% 
+  summarise(month_mean = mean(VALUE)) %>% 
+  ungroup() %>% 
+  summarise(
+    mean = mean(month_mean),
+    stdev = sd(month_mean),
+    user_min = mean - 3 * stdev,
+    user_max = mean + 3 *stdev
+  ) %>% 
+  mutate(obs = "all") %>% 
+  bind_rows(
+    inv %>% 
+      filter(!(DEPTH %in% c(18, 23, 26, 28, 36, 40))) %>% 
+      group_by(MONTH) %>% 
+      summarise(month_mean = mean(VALUE)) %>% 
+      ungroup() %>% 
+      summarise(
+        mean = mean(month_mean),
+        stdev = sd(month_mean),
+        user_min = mean - 3 * stdev,
+        user_max = mean + 3 *stdev
+      ) %>% 
+      mutate(obs = "above thermocline")
+  ) %>% 
+  mutate(across(where(is.numeric), .fn = round, digits = 2)) %>% 
+  select(obs, everything()) 
+
+  datatable(
+    inv_thresh,
+    rownames = FALSE, 
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = FALSE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    )
+  )
+```
+
+</br>
+
+- It is recommended to remove the observations from below the thermocline (18, 23, 26, 28, 36, 40 m) before calculating gross range and climatology thresholds.
+- There is a notable difference between thresholds calculated with all observations compared to thresholds calculated from observations measured above the thermocline.
+- When observations from below the thermocline *are* considered, `user_max` is only `r inv_thresh$user_max` degree C. This means that observations within a reasonable temperature range would be flagged by the gross range test.
+- The observations from below the thermocline would not be flagged by the gross range test using either value of `user_min`.
+
+- The climatology test will flag observations from below the thermocline recorded in the summer. These flags should be interpreted as "Of Interest".
+
+
+
+
+
+## Filtered Data
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 7: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C).
+
+p <- plot_histogram(dat_filt, hist_col = VALUE, binwidth = 2) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 8: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 9: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 10: County 
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of temperature observations by county (binwidth = 2 degrees C).
+
+p <- dat_filt %>% 
+  plot_histogram(hist_col = VALUE, binwidth = 2) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 11: County + Depth
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 12: County + Year
+```{r}
+#| fig-height: 12
+#| fig-cap: Distribution of temperature observations (binwidth = 2 degree C), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_filt$COUNTY)
+
+dat_filt <- dat_filt %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_filt %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 2, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+- County data distributions are typically uniform, bimodal, or skewed right.
+- County + month distributions are typically more normally distributed (by eye; e.g., Guysborough)
+
+
+
+
+
+

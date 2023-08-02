@@ -1,4 +1,6 @@
-# July 21, 2023
+# August 2, 2023
+
+# reprocessed data
 
 library(dplyr)
 library(here)
@@ -10,7 +12,7 @@ library(sensorstrings)
 library(strings)
 library(tidyr)
 
-# all data
+
 dat_raw <- list.files(
   here("reprocessed-data-raw"), full.names = TRUE, pattern = ".rds"
 ) %>%
@@ -18,15 +20,30 @@ dat_raw <- list.files(
   list_rbind() %>%
   select(
     -c(latitude, longitude, lease, string_configuration, sensor_type),
-    -contains("temperature"), -contains("salinity"), -contains("measured"),
-    -contains("uncorrected")) %>%
-  na.omit() %>%   # removes rows without DO data
+    -contains("dissolved_oxygen"), -contains("salinity"), -contains("measured")
+  ) %>%
+  na.omit() %>%   # removes rows without temp data
   mutate(sensor_depth_at_low_tide_m = round(as.numeric(sensor_depth_at_low_tide_m)))
 
+
 # calculate rolling standard deviation ------------------------------------
-# this takes about 10 -15 mins to run
-dat_raw_qc <- dat_raw %>%
+# this takes a while to run
+dat_raw_qc1 <- dat_raw %>%
+  filter(county == "Guysborough") %>%
   qc_test_rolling_sd(keep_sd_cols = TRUE)
+
+dat_raw_qc2 <- dat_raw %>%
+  filter(county == "Lunenburg") %>%
+  qc_test_rolling_sd(keep_sd_cols = TRUE)
+
+# remaining counties
+dat_raw_qc3 <- dat_raw %>%
+  filter((!county %in% c("Guysborough", "Lunenburg"))) %>%
+  qc_test_rolling_sd(keep_sd_cols = TRUE)
+
+#rm(dat_raw1, dat_raw2, dat_raw3)
+
+dat_raw_qc <- bind_rows(dat_raw_qc1, dat_raw_qc2, dat_raw_qc3)
 
 # check n_int and n_sample ------------------------------------------------
 ## for very large int_sample (e.g. data gaps):
@@ -43,6 +60,7 @@ n_sample <- dat_raw_qc %>%
   arrange(desc(int_sample))
 
 # when int_sample > 2 hours, N_sample_effective should = 0, and sd_roll = NA
+# there are some large intervals for vemco data
 large_int <- dat_raw_qc %>%
   filter(int_sample > 120) %>%  # 120 mins
   distinct(
@@ -61,5 +79,6 @@ obs <- dat_raw_qc %>%
   arrange(desc(int_sample))
 
 # rexport ------------------------------
-saveRDS(dat_raw_qc, here("data/do_rolling_sd_reprocessed.rds"))
+saveRDS(dat_raw_qc, here("data/temp_rolling_sd_reprocessed.rds"))
+
 
