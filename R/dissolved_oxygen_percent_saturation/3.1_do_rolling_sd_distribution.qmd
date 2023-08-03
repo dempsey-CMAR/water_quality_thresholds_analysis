@@ -46,7 +46,6 @@ dat_all <- readRDS(here("data/do_rolling_sd_prelim_qc.rds")) %>%
     -c(sensor_type, int_sample, n_sample, rolling_sd_flag_dissolved_oxygen_percent_saturation)
   ) %>% 
   mutate(
-   # county = factor(county),
     depth = factor(sensor_depth_at_low_tide_m),
     year = factor(year(timestamp_utc)),
     month = month(timestamp_utc)
@@ -90,8 +89,6 @@ DRAFT July 25, 2023
   - Other "outlier" data series not considered
     - Data from Whycocmagh Bay near or below the oxycline (8, 18, 28, 36 m)
     - Tickle Island at 60 m
-
-
 
 - Rolling standard deviation is not normally distributed.
 - Distribution is skewed right.

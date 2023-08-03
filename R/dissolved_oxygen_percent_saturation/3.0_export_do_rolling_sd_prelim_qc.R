@@ -16,10 +16,6 @@ library(tidyr)
 dat_raw <- import_strings_data(input_path = here("data-raw")) %>%
   filter(
     VARIABLE == "Dissolved Oxygen", UNITS == "percent saturation"
-    # !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
-    # # !(STATION == "Ram Island" &
-    # #     TIMESTAMP > as_datetime("2021-10-10")
-    # #   & TIMESTAMP < as_datetime("2021-11-15"))
   ) %>%
   mutate(DEPTH = round(as.numeric(DEPTH))) %>%
   ss_reformat_old_data() %>%
@@ -61,7 +57,6 @@ obs <- dat_raw_qc %>%
   group_by(int_sample) %>%
   summarise(n_obs = n()) %>%
   arrange(desc(int_sample))
-
 
 # rexport ------------------------------
  saveRDS(dat_raw_qc, here("data/do_rolling_sd_prelim_qc.rds"))
