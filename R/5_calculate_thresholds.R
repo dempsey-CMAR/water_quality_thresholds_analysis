@@ -1,9 +1,14 @@
+# August 3, 2023
+
+# ** explain how to generate rolling sd
+# or possibly put code below
 
 # use rolling_sd data so don't have to re-calculate rolling sd (takes a while)
 # should  be able to calculate from the rolling_sd files (preliminary qc)
 # NOT already filtered
 # be careful applying filters - depth must be rounded!
 
+library(data.table)
 library(dplyr)
 library(lubridate)
 library(sensorstrings)
@@ -23,13 +28,13 @@ dat_do <- readRDS(here("data/do_rolling_sd_prelim_qc.rds")) %>%
     !(county == "Guysborough" & sensor_depth_at_low_tide_m == 60)
   )
 
-# user thresholds
-user_do <- qc_calculate_user_thresholds(
+# climatology thresholds
+climatology_do <- qc_calculate_climatology_thresholds(
   dat_do, var = value_dissolved_oxygen_percent_saturation
 )
 
-# climatology thresholds
-climatology_do <- qc_calculate_climatology_thresholds(
+# gross range user thresholds
+user_do <- qc_calculate_user_thresholds(
   dat_do, var = value_dissolved_oxygen_percent_saturation
 )
 
@@ -40,10 +45,28 @@ rolling_sd_do <- qc_calculate_rolling_sd_thresholds(
 
 
 
+# temperature -------------------------------------------------------------
+
+dat_temp <- readRDS(here("data/temp_rolling_sd_prelim_qc.rds")) %>%
+  select(
+    -c(sensor_type, int_sample, n_sample, rolling_sd_flag_temperature_degree_c)
+  ) %>%
+  mutate(depth = factor(sensor_depth_at_low_tide_m)) %>%
+  filter(
+    !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(county == "Inverness" & depth %in% c(18, 23, 26, 28, 36, 40))
+  )
 
 
 
 
+# export ------------------------------------------------------------------
+
+thresholds_out <- bind_row(
+  climatology_do, user_do, rolling_sd_do
+)
+
+fwrite(thresholds_out, file = here("output/5_thresholds.csv"))
 
 
 

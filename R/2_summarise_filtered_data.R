@@ -50,8 +50,6 @@ dat_all <- import_strings_data(input_path = here("data-raw")) %>%
     !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) &
         VARIABLE == "Dissolved Oxygen"),
     !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen")
-    # !(STATION == "Ram Island" & TIMESTAMP > as_datetime("2021-10-10") &
-    #     TIMESTAMP < as_datetime("2021-11-15") & VARIABLE == "Dissolved Oxygen")
   )
 
 # summarize data ----------------------------------------------------------

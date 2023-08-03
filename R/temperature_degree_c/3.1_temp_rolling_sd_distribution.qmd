@@ -491,6 +491,10 @@ stats_filt <- dat_filt %>%
 p <- plot_mean_sd_county(stats_all)
 
 ggplotly(p)
+
+# stats_filt %>%
+#   select(-c(variable, max, contains("thresh"))) %>%
+#   write_csv(file = here("output/temperature_rolling_sd_thresholds.csv"))
 ```
 
 #### Figure 16: Quantiles
@@ -521,10 +525,6 @@ stats_filt %>%
       searching = TRUE,
       columnDefs = list(list(className = 'dt-center', targets = "_all"))
     ), rownames = FALSE)
-
-stats_filt %>%
-  select(-c(variable, max, contains("thresh"))) %>%
-  write_csv(file = here("output/temperature_rolling_sd_thresholds.csv"))
 
 ```
 

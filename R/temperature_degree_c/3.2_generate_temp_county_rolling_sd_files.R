@@ -10,7 +10,7 @@ library(stringr)
 library(tidyr)
 
 
-counties <- c("annapolis", "antigonish", "colchester",
+counties <- c("annapolis", "antigonish", "colchester", "cape breton",
               "digby", "guysborough",
               "halifax", "inverness", "lunenburg", "pictou", "queens",
               "richmond", "shelburne", "victoria", "yarmouth")

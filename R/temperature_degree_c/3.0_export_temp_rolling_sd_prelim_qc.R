@@ -1,4 +1,4 @@
-# July 28, 2023
+# August 3, 2023
 
 # preliminary qc:
 ## Data sent to Open Data Portal
@@ -33,7 +33,7 @@ dat_raw2 <- import_strings_data(
   select(-c(waterbody, lease, latitude, longitude, string_configuration))
 
 # remaining counties
-counties <- c("Annapolis", "Antigonish", "Colchester",
+counties <- c("Annapolis", "Antigonish", "Cape Breton", "Colchester",
               "Digby", "Inverness",
               "Halifax", "Pictou", "Queens",
               "Richmond", "Shelburne", "Victoria", "Yarmouth")

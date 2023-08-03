@@ -58,7 +58,7 @@ obs <- dat_raw_qc %>%
   summarise(n_obs = n()) %>%
   arrange(desc(int_sample))
 
-# rexport ------------------------------
+# export ------------------------------
  saveRDS(dat_raw_qc, here("data/do_rolling_sd_prelim_qc.rds"))
 
 

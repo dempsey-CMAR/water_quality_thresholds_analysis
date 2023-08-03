@@ -293,6 +293,11 @@ for(i in 1:nrow(depl)){
 ```
 :::
 
+## Conclusions
+
+- Based on preliminary QC and exploratory analysis, there is not a substantial number of "Suspect" observations in the filtered temperature data.
+
+- Use q_997 to highlight the most "Suspect / Of Interest" observations within each county and reduce the number of false positive flags.
 
 
 

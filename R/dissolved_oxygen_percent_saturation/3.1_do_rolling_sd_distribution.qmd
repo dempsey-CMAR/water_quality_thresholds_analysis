@@ -495,8 +495,8 @@ p <- plot_mean_sd_county(stats_all)
 ggplotly(p)
 
 # stats_filt %>%
-  # select(-c(variable, max, contains("thresh"))) %>%
-  # write_csv(file = here("output/do_rolling_sd_thresholds.csv"))
+#   select(-c(variable, max, contains("thresh"))) %>%
+#   write_csv(file = here("output/do_rolling_sd_thresholds.csv"))
 
 ```
 
