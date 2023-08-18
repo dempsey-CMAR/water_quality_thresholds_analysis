@@ -1,0 +1,252 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8, fig.height = 6)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(strings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/remove_do_correction.R"))
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Dissolved Oxygen (mg/L)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# data - preliminary QC 
+dat_all <- import_strings_data(input_path = here("data-raw")) %>% 
+  remove_do_correction(keep_temp = TRUE) %>% 
+  select(COUNTY, WATERBODY, STATION, 
+         DEPLOYMENT_PERIOD,
+         TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
+  #filter(VARIABLE == "Dissolved Oxygen", UNITS == "mg/L") %>%
+  mutate(
+    DEPTH = factor(round(as.numeric(DEPTH))),
+    MONTH = month(TIMESTAMP),
+    YEAR = factor(year(TIMESTAMP))
+  ) 
+
+county_pal <- get_county_colour_palette(length(unique(dat_all$COUNTY)))
+depth_pal <- viridis(length(unique(dat_all$DEPTH)), direction = -1)
+year_pal <- viridis( length(unique(dat_all$YEAR)), option = "C")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+
+```
+
+# Dissolved Oxygen Distribution
+
+August 15, 2023
+
+- Data submitted to the Open Data Portal in December 2022.
+
+- Preliminary QC (submitted to Open Data Portal)
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
+  
+- Notes on salinity correction:
+  - The DO concentration data sent to the Open Data Portal in December 2022 was corrected for salinity using `strings::do_salinity_correction()`.
+  - $DO_{corrected} = DO_{raw} * F_s$, where $F_s$ is a salinity correction factor between 0 and 1.
+  - The newly processed and flagged data will NOT be corrected for salinity.
+  - So to calculate thresholds based on historical data, the correction factor must be removed before analysis.
+  - The data presented here is the *uncorrected* dissolved oxygen data.
+
+## Deployment Dates
+
+### Table 1
+```{r}
+dat_all %>% 
+  distinct(COUNTY, STATION, DEPLOYMENT_PERIOD) %>% 
+  arrange(COUNTY, STATION) %>% 
+  select(-COUNTY) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+
+```
+
+## Preliminary QC
+
+## Halifax
+
+### Shut-In Island
+```{r}
+dat_all %>% 
+  filter(STATION == "Shut-In Island") %>% 
+  ggplot_variables_at_depth()
+```
+
+## Lunenburg
+
+### Birchy Head
+```{r}
+dat_all %>% 
+  filter(STATION == "Birchy Head") %>% 
+  ggplot_variables_at_depth()
+```
+
+### Flat Island
+```{r}
+dat_all %>% 
+  filter(STATION == "Flat Island") %>% 
+  ggplot_variables_at_depth()
+```
+
+### Little Rafuse Island
+```{r}
+dat_all %>% 
+  filter(STATION == "Little Rafuse Island") %>% 
+  ggplot_variables_at_depth()
+```
+
+### Tilley Point
+```{r}
+dat_all %>% 
+  filter(STATION == "Tilley Point") %>% 
+  ggplot_variables_at_depth()
+```
+
+### Upper Blanford
+```{r}
+dat_all %>% 
+  filter(STATION == "Upper Blandford") %>% 
+  ggplot_variables_at_depth()
+```
+
+# QC Recommendations
+
+- Shut-In Island: ~ Aug 15. DO does not follow temperature trend.
+- Birchy Head: ~ Aug 15. DO does not follow temperature trend.
+- Flat Island: July 1. DO trends down most of the deployment, likely due to sensor drift.
+- Little Rafuse Island: June 10. DO trends down most of the deployment, likely due to sensor drift.
+- Tilley Point: leave as-is; DO trend loosely corresponds to spikes in temperature.
+- Upper Blandford: ~ Aug 15. DO does not follow temperature trend.
+
+```{r}
+dat_filt <- dat_all %>% 
+    filter(
+      !(STATION %in% c("Shut-In Island", "Birchy Head", "Upper Blandford") & 
+      #  UNITS == "mg/L" & 
+        TIMESTAMP > as_datetime("2022-08-15")),
+    !(STATION == "Flat Island"  & 
+      #  UNITS == "mg/L" &
+        TIMESTAMP > as_datetime("2022-07-01")), 
+    !(STATION == "Little Rafuse Island" &  
+       # UNITS == "mg/L" &
+        TIMESTAMP > as_datetime("2022-06-10")) 
+  #  UNITS != "degrees Celsius"
+    )
+  
+
+# dat_filt2 <- dat_all %>% 
+#   filter(
+#     (STATION == "Shut-In Island" & TIMESTAMP <= as_datetime("2022-08-15")) |
+#       (STATION == "Birchy Head" & TIMESTAMP <= as_datetime("2022-08-15")) |
+#       (STATION == "Flat Island" & TIMESTAMP <= as_datetime("2022-07-01")) |
+#       (STATION == "Little Rafuse Island" &
+#          TIMESTAMP <= as_datetime("2022-06-10")) |
+#       (STATION == "Upper Blandford" & TIMESTAMP <= as_datetime("2022-08-15")) |
+#     STATION == "Tilley Point",
+#     UNITS == "mg/L"
+#   )
+
+```
+
+```{r}
+dat_all_cor <- dat_all %>% 
+  select(-UNITS) %>% 
+  pivot_wider(names_from = "VARIABLE", values_from = "VALUE") %>% 
+  group_by(STATION) %>% 
+  summarise(correlation = cor(`Dissolved Oxygen`, Temperature))
+
+dat_filt_cor <- dat_filt %>% 
+  select(-UNITS) %>% 
+  pivot_wider(names_from = "VARIABLE", values_from = "VALUE") %>% 
+  group_by(STATION) %>% 
+  summarise(correlation_filt = cor(`Dissolved Oxygen`, Temperature))
+
+corr <- dat_all_cor %>% 
+  left_join(dat_filt_cor)
+
+```
+
+
+# Additional QC
+
+- Note difference in scales (x-axis, y-axis, colour) compared to previous figures.
+
+## Halifax
+
+### Shut-In Island
+```{r}
+dat_filt %>% 
+  filter(STATION == "Shut-In Island") %>% 
+  ggplot_variables_at_depth(color.pal = "#007500") 
+```
+
+## Lunenburg
+
+### Birchy Head
+```{r}
+dat_filt %>% 
+  filter(STATION == "Birchy Head") %>% 
+  ggplot_variables_at_depth(color.pal = "#007500") 
+```
+
+### Flat Island
+```{r}
+dat_filt %>% 
+  filter(STATION == "Flat Island") %>% 
+  ggplot_variables_at_depth(color.pal = "#007500") 
+```
+
+### Little Rafuse Island
+```{r}
+dat_filt %>% 
+  filter(STATION == "Little Rafuse Island") %>% 
+  ggplot_variables_at_depth(color.pal = "#007500")
+```
+
+### Tilley Point
+```{r}
+dat_filt %>% 
+  filter(STATION == "Tilley Point") %>% 
+  ggplot_variables_at_depth(color.pal = "#007500") 
+```
+
+### Upper Blanford
+```{r}
+dat_filt %>% 
+  filter(STATION == "Upper Blandford") %>% 
+  ggplot_variables_at_depth(color.pal = "#007500") 
+```
+
+
