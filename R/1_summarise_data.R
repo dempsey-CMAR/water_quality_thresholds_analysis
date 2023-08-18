@@ -1,5 +1,5 @@
 # February 1, 2023
-# Updated July 24, 2023
+# Updated August 17, 2023
 
 # Imports ALL processed Water Quality observations
 # Preliminary Quality Control was applied
@@ -24,17 +24,33 @@ library(lubridate)
 library(sensorstrings)
 library(strings)
 library(readr)
+library(tidyr)
 
 source(here("functions/summarise_grouped_data.R"))
+source(here("functions/remove_do_correction.R"))
 
 # read in data
-dat_all <- import_strings_data(input_path = here("data-raw")) %>%
+dat_raw <- import_strings_data(input_path = here("data-raw"))
+
+dat_all <- dat_raw %>%
+  # remove "Corrected" DO mg/L here and add the uncorrected obs below
+  filter(!(VARIABLE == "Dissolved Oxygen" & UNITS == "mg/L")) %>%
+  # divides out salinity correction factor from dissolved oxygen (mg/L) observations
+  # does not modify other observations
+  bind_rows(remove_do_correction(dat_raw)) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
   mutate(
     DEPTH = round(as.numeric(DEPTH)),
     MONTH = month(TIMESTAMP),
     YEAR = year(TIMESTAMP)
   )
+
+# note: for "Shut-In Island 2021-May-21 to 2021-Nov-26", the trim date for
+# dissolved oxygen was BEFORE the trim date for temperature,
+# i.e., there is no corresponding temperature observation for the first
+# DO obs, and so F_s cannot be calculated. This obs is removed from the analysis
+
+rm(dat_raw)
 
 # summarise data ----------------------------------------------------------
 all <- dat_all %>%

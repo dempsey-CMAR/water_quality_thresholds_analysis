@@ -1,10 +1,12 @@
 # February 1, 2023
-# Updated July 24, 2023
+# Updated August 18, 2023
 
 # Imports processed Water Quality observations, then filters to exclude
 # freshwater stations and other outliers
 # ("Piper Lake", "Hourglass Lake", "0193", "Sissiboo", several depths at Inverness
 # stations 0814x East, 0814x West, Aberdeen, and Deep Basin )
+
+# applied additional trim to Dissolved Oxygen - mg/L data
 
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
@@ -28,9 +30,17 @@ library(sensorstrings)
 library(strings)
 library(readr)
 
+source(here("functions/remove_do_correction.R"))
 source(here("functions/summarise_grouped_data.R"))
 
-dat_all <- import_strings_data(input_path = here("data-raw")) %>%
+dat_raw <- import_strings_data(input_path = here("data-raw"))
+
+dat_all <- dat_raw %>%
+  # remove "Corrected" DO mg/L here and add the uncorrected obs below
+  filter(!(VARIABLE == "Dissolved Oxygen" & UNITS == "mg/L")) %>%
+  # divides out salinity correction factor from dissolved oxygen (mg/L) observations
+  # does not modify other observations
+  bind_rows(remove_do_correction(dat_raw)) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
   mutate(
     DEPTH = round(as.numeric(DEPTH)),
@@ -46,10 +56,31 @@ dat_all <- import_strings_data(input_path = here("data-raw")) %>%
     !(COUNTY == "Inverness" & DEPTH %in% c(18, 23, 26, 28, 36, 40) &
         VARIABLE == "Temperature"),
 
-    # Dissolved Oxygen
+    # Dissolved Oxygen - % saturation
     !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) &
         VARIABLE == "Dissolved Oxygen"),
-    !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen")
+    !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen"),
+
+    # Dissolved Oxygen - mg/L (extra trim for 2022)
+    !(STATION %in% c("Shut-In Island", "Birchy Head", "Upper Blandford") &
+        UNITS == "mg/L" &
+        TIMESTAMP > as_datetime("2022-08-15")),
+    !(STATION == "Flat Island"  &
+        UNITS == "mg/L" &
+        TIMESTAMP > as_datetime("2022-07-01")),
+    !(STATION == "Little Rafuse Island" &
+        UNITS == "mg/L" &
+        TIMESTAMP > as_datetime("2022-06-10"))
+
+
+    # !(STATION == "Birchy Head" & UNITS == "mg/L" &
+    #     TIMESTAMP > as_datetime("2022-08-15")),
+    # !(STATION == "Flat Island"  & UNITS == "mg/L" &
+    #     TIMESTAMP > as_datetime("2022-07-01")) |
+    #   !(STATION == "Little Rafuse Island" &  UNITS == "mg/L" &
+    #       TIMESTAMP > as_datetime("2022-06-10")) |
+    #   !(STATION == "Upper Blandford" &  UNITS == "mg/L" &
+    #       TIMESTAMP > as_datetime("2022-08-15"))
   )
 
 # summarize data ----------------------------------------------------------
