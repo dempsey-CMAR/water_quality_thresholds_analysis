@@ -52,14 +52,12 @@ theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 
 # EXPLORATORY ANALYSIS: DISSOLVED OXYGEN CONCENTRATION
 
-August 15, 2023
+August 21, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
-
 - Preliminary QC was applied to the data before submission to the Open Data Portal.
   - Obvious outliers removed.
   - Suspected biofouling removed.
-  
 - Notes on salinity correction:
   - The DO concentration data sent to the Open Data Portal in December 2022 was corrected for salinity using `strings::do_salinity_correction()`.
   - $DO_{corrected} = DO_{raw} * F_s$, where $F_s$ is a salinity correction factor between 0 and 1.

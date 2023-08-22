@@ -52,13 +52,14 @@ dat_all <- readRDS(here("data/do_mg_per_l_rolling_sd_prelim_qc.rds")) %>%
   ) %>% 
   na.omit() 
 
-# # filtered data
-# dat_filt <- dat_all %>% 
-#    filter(
-#     !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
-#     !(county == "Inverness" & depth %in% c(8, 18, 28, 36)),
-#     !(county == "Guysborough" & depth == 60)
-#   )
+# filtered data
+dat_filt <- dat_all %>% 
+  filter(
+    !(station %in% c("Shut-In Island", "Birchy Head", "Upper Blandford") & 
+        timestamp_utc > as_datetime("2022-08-15")),
+    !(station == "Flat Island"  &  timestamp_utc > as_datetime("2022-07-01")), 
+    !(station == "Little Rafuse Island" &  timestamp_utc > as_datetime("2022-06-10")) 
+  )
 
 county_pal <- get_county_colour_palette(length(unique(dat_all$county)))
 depth_pal <- viridis(length(unique(dat_all$sensor_depth_at_low_tide_m)), direction = -1)
@@ -95,7 +96,7 @@ DRAFT August 16, 2023
 ```{r}
 #| label: fig-dist-all
 #| fig-height: 6
-#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 %).
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L).
 
 p <- plot_histogram(dat_all, hist_col = sd_roll, binwidth = 0.25) +
   x_axis
@@ -107,7 +108,7 @@ ggplotly(p)
 ```{r}
 #| label: fig-dist-all-depth
 #| fig-height: 6
-#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 %), coloured by depth.
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), coloured by depth.
 
 p <- plot_histogram(
   dat_all, hist_col = sd_roll, binwidth = 0.25,
@@ -122,7 +123,7 @@ ggplotly(p)
 ```{r}
 #| label: fig-dist-all-year
 #| fig-height: 6
-#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 %), coloured by year.
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), coloured by year.
 
 p <- plot_histogram(
   dat_all, hist_col = sd_roll, binwidth = 0.25, 
@@ -142,8 +143,8 @@ ggplotly(p)
 #### Figure 4: County 
 ```{r}
 #| label: fig-dist-county
-#| fig-height: 12
-#| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 0.25 %).
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 0.25 mg/L).
 
 p <- dat_all %>% 
   plot_histogram(hist_col = sd_roll, binwidth = 0.25) +
@@ -157,8 +158,8 @@ ggplotly(p)
 #### Figure 5: County + Depth
 ```{r}
 #| label: fig-dist-county-depth
-#| fig-height: 12
-#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 %), within each county, coloured by depth.
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), within each county, coloured by depth.
 
 p <- plot_histogram(
   dat_all, hist_col = sd_roll, binwidth = 0.25, fill_col = depth, pal = depth_pal
@@ -173,8 +174,8 @@ ggplotly(p)
 #### Figure 6: County + Year
 ```{r}
 #| label: fig-dist-county-year
-#| fig-height: 12
-#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 %), within each county coloured by year.
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), within each county coloured by year.
 
 p <- plot_histogram(
   dat_all, hist_col = sd_roll, binwidth = 0.25, fill_col = year, pal = year_pal
@@ -191,7 +192,7 @@ ggplotly(p)
 
 ::: panel-tabset
 ```{r}
-#| fig-height: 10
+#| fig-height: 12
 #| results: "asis"
 
 counties <- unique(dat_all$county)
@@ -226,7 +227,7 @@ for(i in seq_along(counties)){
 
 #### Figure 7: Central Tendancy
 ```{r}
-#| fig-height: 8
+#| fig-height: 6
 #| fig-cap: The mean and standard deviation of rolling standard deviation in each county.
 #| label: fig-mean-filt
 
@@ -237,6 +238,7 @@ stats_all <- dat_all %>%
     med = median(sd_roll),
     stdev = sd(sd_roll),
     
+    q_90 = quantile(sd_roll, prob = 0.90),
     q_95 = quantile(sd_roll, prob = 0.95),
     q_97 = quantile(sd_roll, prob = 0.97),
     q_99 = quantile(sd_roll, prob = 0.99),
@@ -252,6 +254,7 @@ stats_all <- dat_all %>%
         med = median(sd_roll),
         stdev = sd(sd_roll),
         
+        q_90 = quantile(sd_roll, prob = 0.90),
         q_95 = quantile(sd_roll, prob = 0.95),
         q_97 = quantile(sd_roll, prob = 0.97),
         q_99 = quantile(sd_roll, prob = 0.99),
@@ -273,7 +276,7 @@ ggplotly(p)
 #### Figure 8: Quantiles
 ```{r}
 #| fig-cap: Upper quantiles.
-#| fig-height: 7
+#| fig-height: 6
 #| label: fig-quantiles-filt
 
 p <- stats_all %>% 
@@ -283,7 +286,219 @@ p <- stats_all %>%
   geom_point() +
   geom_line() +
   scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
-  scale_y_continuous(limits = c(1.5, 13))
+  scale_y_continuous(limits = c(0, 3))
+
+ggplotly(p)
+```
+
+#### Table 1: Summary statistics
+```{r}
+stats_all %>% 
+  select(-c(variable, max, contains("thresh"))) %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE)
+```
+
+:::
+
+## Filtered
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 1: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L).
+
+p <- plot_histogram(dat_filt, hist_col = sd_roll, binwidth = 0.25) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 2: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.25,
+  fill_col = depth, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 3: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.25, 
+  fill_col = year, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 4: County 
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations by county (binwidth = 0.25 mg/L).
+
+p <- dat_filt %>% 
+  plot_histogram(hist_col = sd_roll, binwidth = 0.25) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 5: County + Depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.25, fill_col = depth, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 6: County + Year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of dissolved oxygen observations (binwidth = 0.25 mg/L), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.25, fill_col = year, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 12
+#| results: "asis"
+
+counties <- unique(dat_filt$county)
+
+dat_filt <- dat_filt %>% 
+  mutate(month = month(month, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_filt %>% 
+    filter(county == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = sd_roll, binwidth = 0.25, fill_col = year, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~month, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+
+### Summary Statistics
+
+::: panel-tabset
+
+#### Figure 7: Central Tendancy
+```{r}
+#| fig-height: 6
+#| fig-cap: The mean and standard deviation of rolling standard deviation in each county.
+
+stats_all <- dat_filt %>% 
+  summarise(
+    max = max(sd_roll),
+    mean = mean(sd_roll),
+    med = median(sd_roll),
+    stdev = sd(sd_roll),
+    
+    q_90 = quantile(sd_roll, prob = 0.90),
+    q_95 = quantile(sd_roll, prob = 0.95),
+    q_97 = quantile(sd_roll, prob = 0.97),
+    q_99 = quantile(sd_roll, prob = 0.99),
+    q_997 = quantile(sd_roll, prob = 0.997)
+  ) %>% 
+  mutate(county = "All") %>% 
+  bind_rows(
+    dat_filt %>% 
+      group_by(county) %>% 
+      summarise(
+        max = max(sd_roll),
+        mean = mean(sd_roll),
+        med = median(sd_roll),
+        stdev = sd(sd_roll),
+        
+        q_90 = quantile(sd_roll, prob = 0.90),
+        q_95 = quantile(sd_roll, prob = 0.95),
+        q_97 = quantile(sd_roll, prob = 0.97),
+        q_99 = quantile(sd_roll, prob = 0.99),
+        q_997 = quantile(sd_roll, prob = 0.997)
+      ) 
+  ) %>%
+  mutate(
+    variable = "dissolved oxygen_percent_saturation",
+    thresh_3sd = mean + 3 * stdev,
+    across(.cols = where(is.numeric), .fns = round, digits = 2)
+  ) %>% 
+  select(county, everything())
+
+p <- plot_mean_sd_county(stats_all)
+
+ggplotly(p)
+```
+
+#### Figure 8: Quantiles
+```{r}
+#| fig-cap: Upper quantiles.
+#| fig-height: 6
+
+p <- stats_all %>% 
+  select(county, contains("q")) %>% 
+  pivot_longer(cols = contains("q"), names_to = "quantile") %>% 
+  ggplot(aes(quantile, value, group = county, col = county)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
+  scale_y_continuous(limits = c(0, 3))
 
 ggplotly(p)
 ```

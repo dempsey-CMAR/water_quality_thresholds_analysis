@@ -1,0 +1,189 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(purrr)
+library(quarto)
+library(RColorBrewer)
+library(readr)
+library(summaryplots)
+library(tidyr)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# summarized data - preliminary qc
+thresh_prelim <- read_csv(
+  here("data/1_summary.csv"), show_col_types = FALSE) %>% 
+  filter(variable == "Dissolved Oxygen", units == "mg/L", group == "all_data") %>% 
+  mutate(status = "prelim_qc") %>% 
+  select(mean, stdev, n, status)
+
+# summarized data - additional qc
+thresh_filt <- read_csv(
+  here("data/2_summary_filtered_data.csv"), show_col_types = FALSE) %>% 
+  filter(variable == "Dissolved Oxygen", units == "mg/L", group == "all_data") %>% 
+  mutate(status = "filtered") %>% 
+  select(mean, stdev, n, status)
+
+# thresh
+thresh <- thresh_prelim %>% 
+  bind_rows(thresh_filt) %>% 
+  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev) %>% 
+  select(status, everything())
+
+# all data (reprocessed)
+dat_raw <- list.files(
+  here("reprocessed-data-raw"), full.names = TRUE, pattern = ".rds"
+) %>%
+  purrr::map(readRDS) %>%
+  list_rbind() %>%
+  select(
+    -c(latitude, longitude, lease, string_configuration, sensor_type),
+    -contains("temperature"), -contains("salinity"), -contains("measured"),
+    -contains("percent_saturation")) %>%
+  na.omit() %>%   # removes rows without DO data
+  mutate(sensor_depth_at_low_tide_m = round(as.numeric(sensor_depth_at_low_tide_m)))
+
+
+county_pal <- get_county_colour_palette(length(unique(dat_raw$county)))
+
+theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
+```
+
+# EXPLORATORY ANALYSIS: DISSOLVED OXYGEN CONCENTRATION
+
+August 18, 2023
+
+- Data submitted to the Open Data Portal in December 2022.
+- Preliminary QC was applied to the data before submission to the Open Data Portal.
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
+- Additional QC was applied based on review of 0.1_do_mg_per_l_additional_qc.html and 2.1_do_distribution.html.
+  - Additional suspected biofouling was removed from the May 2022 deployments.
+- Notes on salinity correction:
+  - The DO concentration data sent to the Open Data Portal in December 2022 was corrected for salinity using `strings::do_salinity_correction()`.
+  - $DO_{corrected} = DO_{raw} * F_s$,
+  where $F_s$ is a salinity correction factor between 0 and 1.
+  - The newly processed and flagged data will NOT be corrected for salinity.
+  - So to calculate thresholds based on historical data, the correction factor must be removed before analysis.
+  - The data presented here is the *uncorrected* dissolved oxygen data.
+  
+# Comparison
+
+### Table 1
+```{r}
+thresh %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = FALSE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE
+  )
+```
+
+
+
+```{r}
+
+thresh_long <- thresh %>% 
+  pivot_longer(
+    cols = c("user_min", "user_max"), 
+    names_to = "threshold",  values_to = "threshold_value")
+
+prelim_qc_min = thresh_long[
+  which(thresh_long$threshold == "user_min" & 
+          thresh_long$status == "prelim_qc"), "threshold_value"]$threshold_value
+
+prelim_qc_max = thresh_long[
+  which(thresh_long$threshold == "user_max" & 
+          thresh_long$status == "prelim_qc"), "threshold_value"]$threshold_value
+
+filt_min = thresh_long[
+  which(thresh_long$threshold == "user_min" & 
+          thresh_long$status == "filtered"), "threshold_value"]$threshold_value
+
+filt_max = thresh_long[
+  which(thresh_long$threshold == "user_max" & 
+          thresh_long$status == "filtered"), "threshold_value"]$threshold_value
+
+
+
+dat_summary <- dat_raw %>% 
+  rename(value = dissolved_oxygen_uncorrected_mg_per_l) %>% 
+  mutate(
+    prelim_qc_user_min = case_when(
+      value < prelim_qc_min ~ 3,
+      value >= prelim_qc_min ~ 1),
+    
+    prelim_qc_user_max = case_when(
+      value > prelim_qc_max ~ 3,
+      value <= prelim_qc_max ~ 1),
+    
+    filt_user_min = case_when(
+      value < filt_min ~ 3,
+      value >= filt_min ~ 1),
+    
+    filt_user_max = case_when(
+      value > filt_max ~ 3,
+      value <= filt_max ~ 1),
+  ) %>% 
+  pivot_longer(
+    cols = contains("user"), 
+    names_to = "threshold", values_to = "threshold_value"
+  ) %>% 
+  group_by(threshold) %>% 
+  summarise(
+    n_flagged = sum(threshold_value == 3), 
+    percent_flagged = round(100 * n_flagged / n(), digits = 2)) %>% 
+  arrange(desc(n_flagged))
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

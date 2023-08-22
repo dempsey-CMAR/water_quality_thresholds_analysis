@@ -60,7 +60,6 @@ August 18, 2023
   - Suspected biofouling removed.
 - Additional QC was applied based on review of 0.1_do_mg_per_l_additional_qc.html and 2.1_do_distribution.html.
   - Additional suspected biofouling was removed from the May 2022 deployments.
-  
 - Notes on salinity correction:
   - The DO concentration data sent to the Open Data Portal in December 2022 was corrected for salinity using `strings::do_salinity_correction()`.
   - $DO_{corrected} = DO_{raw} * F_s$, where $F_s$ is a salinity correction factor between 0 and 1.
@@ -313,8 +312,9 @@ month %>%
 
 :::
 
-- Fewest dissolved oxygen observations in April, likely due to biofouling.
+- Fewest dissolved oxygen observations in October.
 - Very high standard deviation in summer and fall.
+- Unsure why there is a large decrease in September and October.
 
 ## Month + Year 
 
@@ -478,6 +478,9 @@ ggplotly(p)
 - Most observations are from Lunenburg county.
 - Some evidence of climatological cycle within counties.
 - Limited impact of climatology on the mean.
+- No observations in September or October for Halifax.
+- Drop in DO in September and October is from Tilley Point.
+  - Data was almost considered biofouling and trimmed, but it was decided to keep it.
 
 ## Month + County + Year
 ```{r}
@@ -564,7 +567,7 @@ for(i in seq_along(counties)){
 
 # Recommendations for Calculating Thresholds
 
-- Pool data together.
+- Pool data together (do not separate by county).
 - Thresholds will be based on limited data, so be prepared to modify as new data is collected and processed.
 
 

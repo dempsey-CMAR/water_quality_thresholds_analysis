@@ -1,4 +1,4 @@
-# August 16, 2023
+# August 21, 2023
 
 # preliminary qc:
 ## Data sent to Open Data Portal (biofouling trimmed by humans)
@@ -12,14 +12,15 @@ library(sensorstrings)
 library(strings)
 library(tidyr)
 
+source(here("functions/remove_do_correction.R"))
+
 # all data - preliminary QC (leave Inverness in)
 dat_raw <- import_strings_data(input_path = here("data-raw")) %>%
-  filter(
-    VARIABLE == "Dissolved Oxygen", UNITS == "mg/L"
-  ) %>%
+  remove_do_correction() %>%
   mutate(DEPTH = round(as.numeric(DEPTH))) %>%
   ss_reformat_old_data() %>%
-  select(-c(waterbody, lease, latitude, longitude, string_configuration))
+  select(-c(waterbody, lease, latitude, longitude, string_configuration)) %>%
+  rename(dissolved_oxygen_uncorrected_mg_per_l = dissolved_oxygen_mg_per_l)
 
 # calculate rolling standard deviation ------------------------------------
 # this takes about 10 -15 mins to run
