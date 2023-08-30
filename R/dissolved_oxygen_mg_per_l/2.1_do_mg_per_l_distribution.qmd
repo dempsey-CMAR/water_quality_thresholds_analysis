@@ -25,6 +25,7 @@ library(summaryplots)
 library(tidyr)
 library(viridis)
 
+source(here("functions/filter_out_suspect_obs.R"))
 source(here("functions/remove_do_correction.R"))
 source(here("functions/subchunkify.R"))
 
@@ -43,7 +44,11 @@ dt_options <- list(
 # data - preliminary QC 
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   remove_do_correction() %>% 
-  select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
+  select(
+    COUNTY,WATERBODY, STATION,  
+    DEPLOYMENT_PERIOD, TIMESTAMP, DEPTH, 
+    VARIABLE, VALUE, UNITS
+  ) %>%
   mutate(
     DEPTH = factor(round(as.numeric(DEPTH))),
     MONTH = month(TIMESTAMP),
@@ -52,12 +57,7 @@ dat_all <- import_strings_data(input_path = here("data-raw")) %>%
 
 # filtered data
 dat_filt <- dat_all %>% 
-  filter(
-    !(STATION %in% c("Shut-In Island", "Birchy Head", "Upper Blandford") & 
-        TIMESTAMP > as_datetime("2022-08-15")),
-    !(STATION == "Flat Island"  &  TIMESTAMP > as_datetime("2022-07-01")), 
-    !(STATION == "Little Rafuse Island" &  TIMESTAMP > as_datetime("2022-06-10")) 
-  )
+  filter_out_suspect_obs() 
 
 county_pal <- get_county_colour_palette(length(unique(dat_all$COUNTY)))
 depth_pal <- viridis(length(unique(dat_all$DEPTH)), direction = -1)
@@ -72,17 +72,14 @@ theme_facet_plotly <- theme(
 
 # Dissolved Oxygen Distribution
 
-August 15, 2023
+August 29, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
-
 - Preliminary QC (submitted to Open Data Portal)
   - Obvious outliers removed.
   - Suspected biofouling removed.
-
 - Filtered Data
   - Additional suspected biofouling was removed from the May 2022 deployments.
-  
 - Notes on salinity correction:
   - The DO concentration data sent to the Open Data Portal in December 2022 was corrected for salinity using `strings::do_salinity_correction()`.
   - $DO_{corrected} = DO_{raw} * F_s$, where $F_s$ is a salinity correction factor between 0 and 1.
@@ -224,44 +221,6 @@ for(i in seq_along(counties)){
 ```
 :::
 
-## Deployments
-
-The following figures show the deployments from these counties, with preliminary QC applied. See 0_do_mg_per_l_additional_qc.html for more context.
-
-::: panel-tabset
-
-```{r, body} 
-#| results: 'asis'
-#| message: FALSE
-
-stations <- unique(dat_all$STATION)
-
-for(i in seq_along(stations)){
-
-  station_i <- stations[i]
-
-  # subset data to station of interest
-  dat_i <- dat_all %>%
-    filter(STATION == station_i) %>% 
-    convert_depth_to_ordered_factor()
-  
-  cat('\n##', unique(dat_i$COUNTY), '\n')
-  
-  cat('\n')
-  
-  p <- ggplot_variables_at_depth(dat_i) +
-    scale_y_continuous("Dissolved Oxygen (mg/L)", limits = c(0, 18)) +
-    theme(strip.text = element_blank())
-  
-  cat('\n###', station_i, '\n')
-  
-  subchunkify(p, fig_height = 3, fig_width = 8.5)
-  
-  cat('\n')
-}
-```
-:::
-
 ## Filtered Data
 
 ### Pooled
@@ -390,12 +349,10 @@ for(i in seq_along(counties)){
 ```
 :::
 
-
-
 # Recommendations
 
 - Histogram of Preliminary QC pooled data is left-skewed.
-- Filtered data is still slightly left-skewed, mainly because of the Tilley Point 2022 deployment. This was not trimmed becuase the changes in DO loosely followed the inverse pattern of temperature.
+- Filtered data is still slightly left-skewed, although very few observations are included in the tail (`r round(100 * (nrow(dat_filt %>%  filter(VALUE < 8.5)) /nrow(dat_filt)), digits = 2) ` % of observations are less than 8.5 mg/L).
 
 
 

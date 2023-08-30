@@ -78,7 +78,7 @@ theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 
 # EXPLORATORY ANALYSIS: DISSOLVED OXYGEN CONCENTRATION
 
-August 18, 2023
+August 29, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
 - Preliminary QC was applied to the data before submission to the Open Data Portal.

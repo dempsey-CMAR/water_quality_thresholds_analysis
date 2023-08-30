@@ -25,6 +25,7 @@ library(summaryplots)
 library(tidyr)
 library(viridis)
 
+source(here("functions/filter_out_suspect_obs.R"))
 source(here("functions/remove_do_correction.R"))
 source(here("functions/subchunkify.R"))
 
@@ -147,54 +148,38 @@ dat_all %>%
 - Birchy Head: ~ Aug 15. DO does not follow temperature trend.
 - Flat Island: July 1. DO trends down most of the deployment, likely due to sensor drift.
 - Little Rafuse Island: June 10. DO trends down most of the deployment, likely due to sensor drift.
-- Tilley Point: leave as-is; DO trend loosely corresponds to spikes in temperature.
+- Tilley Point: ~ Aug 15. DO does not follow temperature trend.
 - Upper Blandford: ~ Aug 15. DO does not follow temperature trend.
+
 
 ```{r}
 dat_filt <- dat_all %>% 
-    filter(
-      !(STATION %in% c("Shut-In Island", "Birchy Head", "Upper Blandford") & 
-      #  UNITS == "mg/L" & 
-        TIMESTAMP > as_datetime("2022-08-15")),
-    !(STATION == "Flat Island"  & 
-      #  UNITS == "mg/L" &
-        TIMESTAMP > as_datetime("2022-07-01")), 
-    !(STATION == "Little Rafuse Island" &  
-       # UNITS == "mg/L" &
-        TIMESTAMP > as_datetime("2022-06-10")) 
-  #  UNITS != "degrees Celsius"
-    )
-  
-
-# dat_filt2 <- dat_all %>% 
-#   filter(
-#     (STATION == "Shut-In Island" & TIMESTAMP <= as_datetime("2022-08-15")) |
-#       (STATION == "Birchy Head" & TIMESTAMP <= as_datetime("2022-08-15")) |
-#       (STATION == "Flat Island" & TIMESTAMP <= as_datetime("2022-07-01")) |
-#       (STATION == "Little Rafuse Island" &
-#          TIMESTAMP <= as_datetime("2022-06-10")) |
-#       (STATION == "Upper Blandford" & TIMESTAMP <= as_datetime("2022-08-15")) |
-#     STATION == "Tilley Point",
-#     UNITS == "mg/L"
-#   )
+  filter_out_suspect_obs()
+  # filter(
+  #   !(STATION %in% 
+  #       c("Shut-In Island", "Birchy Head", "Upper Blandford", "Tilley Point") & 
+  #       TIMESTAMP > as_datetime("2022-08-15")),
+  #   !(STATION == "Flat Island" & TIMESTAMP > as_datetime("2022-07-01")), 
+  #   !(STATION == "Little Rafuse Island" & TIMESTAMP > as_datetime("2022-06-10")) 
+  # )
 
 ```
 
 ```{r}
-dat_all_cor <- dat_all %>% 
-  select(-UNITS) %>% 
-  pivot_wider(names_from = "VARIABLE", values_from = "VALUE") %>% 
-  group_by(STATION) %>% 
-  summarise(correlation = cor(`Dissolved Oxygen`, Temperature))
-
-dat_filt_cor <- dat_filt %>% 
-  select(-UNITS) %>% 
-  pivot_wider(names_from = "VARIABLE", values_from = "VALUE") %>% 
-  group_by(STATION) %>% 
-  summarise(correlation_filt = cor(`Dissolved Oxygen`, Temperature))
-
-corr <- dat_all_cor %>% 
-  left_join(dat_filt_cor)
+# dat_all_cor <- dat_all %>% 
+#   select(-UNITS) %>% 
+#   pivot_wider(names_from = "VARIABLE", values_from = "VALUE") %>% 
+#   group_by(STATION) %>% 
+#   summarise(correlation = cor(`Dissolved Oxygen`, Temperature))
+# 
+# dat_filt_cor <- dat_filt %>% 
+#   select(-UNITS) %>% 
+#   pivot_wider(names_from = "VARIABLE", values_from = "VALUE") %>% 
+#   group_by(STATION) %>% 
+#   summarise(correlation_filt = cor(`Dissolved Oxygen`, Temperature))
+# 
+# corr <- dat_all_cor %>% 
+#   left_join(dat_filt_cor)
 
 ```
 

@@ -52,7 +52,7 @@ theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 
 # EXPLORATORY ANALYSIS: DISSOLVED OXYGEN CONCENTRATION
 
-August 18, 2023
+August 29, 2023
 
 - Data submitted to the Open Data Portal in December 2022.
 - Preliminary QC was applied to the data before submission to the Open Data Portal.
@@ -69,7 +69,7 @@ August 18, 2023
 
 # Station Locations
 
-Approximate location of stations with dissolved oxygen data.
+Approximate location of stations with dissolved oxygen concentration data.
 Marker size is proportional to the number of dissolved oxygen observations within the county.
 
 ```{r}
@@ -154,7 +154,8 @@ county %>%
 ```
 :::
 
-- No appreciable difference between the two counties.
+- Most (`r 100 * round(county[which(county$county == "Lunenburg"), ]$n / county[which(county$county == "All"), ]$n, digits = 1)` %) of the observations are from Lunenburg county.
+- No appreciable difference between the mean and standard deviations from the two counties.
 
 ## Depth
 
@@ -314,7 +315,7 @@ month %>%
 
 - Fewest dissolved oxygen observations in October.
 - Very high standard deviation in summer and fall.
-- Unsure why there is a large decrease in September and October.
+- Notable decrease in September and October is from 2021 Birchy Head and Little Rafuse Island deployments.
 
 ## Month + Year 
 
@@ -379,7 +380,7 @@ month_year %>%
 ```
 :::
 
-- There is a small but noticeable climatological cycle.
+- There is a noticeable climatological cycle.
 
 ## Month + County
 ```{r}
@@ -479,8 +480,8 @@ ggplotly(p)
 - Some evidence of climatological cycle within counties.
 - Limited impact of climatology on the mean.
 - No observations in September or October for Halifax.
-- Drop in DO in September and October is from Tilley Point.
-  - Data was almost considered biofouling and trimmed, but it was decided to keep it.
+- Only data in September and October is from Birchy Head and Little Rafuse Island (2021).
+
 
 ## Month + County + Year
 ```{r}
