@@ -1,9 +1,13 @@
 # April 24, 2023
 # Updated July 25, 2023
+# Updated August 30, 2023 to only include dissolved oxygen - percent saturation
+# data (because filters for other variables not applied)
 
-# Imports processed Water Quality observations, then filters to exclude
-# freshwater stations and other outliers
-# ("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")
+# Imports processed Water Quality observations, then filters for
+# dissolved oxygen - percent saturation with depths <= 6 m
+# Excludes freshwater stations and other outlier stations
+## Piper Lake, Hourglass Lake, 0193, Sissiboo
+
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
 #### All data
@@ -36,7 +40,8 @@ dat_all <- import_strings_data(input_path = here("data-raw")) %>%
     YEAR = year(TIMESTAMP)
   ) %>%
   filter(
-    DEPTH <= 6, # don't put this above becuase DEPTH is a factor
+    (VARIABLE == "Dissolved Oxygen" & UNITS == "percent saturation"),
+    DEPTH <= 6, # don't put this above because DEPTH is a factor
     !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo"))
   )
 
@@ -87,7 +92,7 @@ dat_out <- bind_rows(
     month = MONTH
   )
 
-write_csv(dat_out, here("data/3_summary_filtered_data_shallow.csv"))
+write_csv(dat_out, here("data/3_summary_filtered_data_shallow_do_percent_sat.csv"))
 
 
 

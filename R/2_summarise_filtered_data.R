@@ -2,13 +2,13 @@
 # Updated August 18, 2023 - do mg/L trim
 # Updated August 29, 2023 - salinity trim
 
-# Imports processed Water Quality observations, then filters to exclude
-# freshwater stations and other outliers
-# ("Piper Lake", "Hourglass Lake", "0193", "Sissiboo", several depths at Inverness
-# stations 0814x East, 0814x West, Aberdeen, and Deep Basin )
+# Imports processed Water Quality observations
 
-# applied additional trim to Dissolved Oxygen - mg/L data
-# applied additional trim to Salinity data
+# Filters to exclude freshwater stations and other outliers for each variable.
+## Freshwater stations: Piper Lake, Hourglass Lake, 0193, Sissiboo
+
+# Applies additional trim to Dissolved Oxygen - mg/L data
+# Applies additional trim to Salinity data
 
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
@@ -119,4 +119,9 @@ dat_out <- bind_rows(
 write_csv(dat_out, here("data/2_summary_filtered_data.csv"))
 
 
-
+#
+# x <- dat_all %>%
+#   filter(VARIABLE == "Salinity") %>%
+#   mutate(YEAR = year(TIMESTAMP)) %>%
+#   filter(YEAR == 2021)
+#  ggplot(x, aes(TIMESTAMP, VALUE)) + geom_point() + facet_wrap(~STATION)

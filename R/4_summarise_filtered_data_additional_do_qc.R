@@ -1,18 +1,13 @@
 # July 13, 2023
 
-# Imports processed Water Quality observations, then filters to exclude
-# freshwater stations and other outliers ("Piper Lake", "Hourglass Lake",
-# "0193", "Sissiboo", several depths at Inverness stations 0814x East, 0814x
-# West, Aberdeen, and Deep Basin )
+# Imports processed Water Quality observations, then filters for
+# dissolved oxygen - percent saturation observations
 
-# Additionally removes counties with suspect DO data based on the
+# Additionally removes counties with suspect DO data based on
 # 2.0_do_distribution.html
 
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
-#
-# Excludes several counties of DO data, based on the rate of change analysis
-#
 #### All data
 #### county
 #### county + depth
@@ -39,18 +34,16 @@ exclude <- c("Antigonish", "Colchester", "Digby", "Inverness", "Pictou", "Queens
 
 dat_all <- import_strings_data(input_path = here("data-raw")) %>%
   select(COUNTY, WATERBODY, STATION, TIMESTAMP, DEPTH, VARIABLE, VALUE, UNITS) %>%
-  filter(
-    !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen"),
-
-    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
-    !(COUNTY %in% exclude & VARIABLE == "Dissolved Oxygen")
-    # !(STATION == "Ram Island" & TIMESTAMP > as_datetime("2021-10-10") &
-    #     TIMESTAMP < as_datetime("2021-11-15") & VARIABLE == "Dissolved Oxygen")
-  ) %>%
   mutate(
     DEPTH = round(as.numeric(DEPTH)),
     MONTH = month(TIMESTAMP),
     YEAR = year(TIMESTAMP)
+  ) %>%
+  filter(
+    (VARIABLE == "Dissolved Oxygen" & UNITS == "percent saturation"),
+    !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen"),
+    !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(COUNTY %in% exclude)
   )
 
 # summarize data ----------------------------------------------------------
@@ -100,7 +93,7 @@ dat_out <- bind_rows(
     month = MONTH
   )
 
-write_csv(dat_out, here("data/4_summary_filtered_data_additional_do_qc.csv"))
+write_csv(dat_out, here("data/4_summary_filtered_data_do_additional_qc.csv"))
 
 
 

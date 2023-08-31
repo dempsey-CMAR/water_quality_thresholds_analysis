@@ -7,7 +7,7 @@
 # Exports the mean, standard deviation, and number of observations
 # from different groupings
 
-#### All data
+#### all data
 #### county
 #### county + depth
 #### county + month
@@ -16,6 +16,7 @@
 #### station
 #### depth
 #### year
+#### month + year
 
 # set up ------------------------------------------------------------------
 library(dplyr)
@@ -33,7 +34,7 @@ source(here("functions/remove_do_correction.R"))
 dat_raw <- import_strings_data(input_path = here("data-raw"))
 
 dat_all <- dat_raw %>%
-  # remove "Corrected" DO mg/L here and add the uncorrected obs below
+  # remove "Corrected" DO mg/L here and add the uncorrected obs below*
   filter(!(VARIABLE == "Dissolved Oxygen" & UNITS == "mg/L")) %>%
   # divides out salinity correction factor from dissolved oxygen (mg/L) observations
   # does not modify other observations
@@ -45,7 +46,7 @@ dat_all <- dat_raw %>%
     YEAR = year(TIMESTAMP)
   )
 
-# note: for "Shut-In Island 2021-May-21 to 2021-Nov-26", the trim date for
+# * Note: for "Shut-In Island 2021-May-21 to 2021-Nov-26", the trim date for
 # dissolved oxygen was BEFORE the trim date for temperature,
 # i.e., there is no corresponding temperature observation for the first
 # DO obs, and so F_s cannot be calculated. This obs is removed from the analysis
