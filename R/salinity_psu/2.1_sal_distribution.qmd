@@ -1,0 +1,506 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(strings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/filter_out_suspect_obs.R"))
+source(here("functions/remove_do_correction.R"))
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Salinity (PSU)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# data - preliminary QC 
+dat_all <- import_strings_data(input_path = here("data-raw")) %>%
+  filter(VARIABLE == "Salinity") %>% 
+  select(
+    COUNTY,WATERBODY, STATION,  
+    DEPLOYMENT_PERIOD, TIMESTAMP, DEPTH, 
+    VARIABLE, VALUE, UNITS
+  ) %>%
+  mutate(
+    DEPTH = factor(round(as.numeric(DEPTH))),
+    MONTH = month(TIMESTAMP),
+    YEAR = factor(year(TIMESTAMP))
+  ) 
+
+# filtered data
+dat_filt <- dat_all %>% 
+  filter_out_suspect_obs() 
+
+# filtered data with no Inverness
+dat_no_inverness <- dat_filt %>% filter(COUNTY != "Inverness")
+
+# filtered data with ONLY Inverness
+dat_inverness <- dat_filt %>% filter(COUNTY == "Inverness")
+
+
+county_pal <- get_county_colour_palette(length(unique(dat_all$COUNTY)))
+depth_pal <- viridis(length(unique(dat_all$DEPTH)), direction = -1)
+year_pal <- viridis( length(unique(dat_all$YEAR)), option = "C")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+
+```
+
+# Salinity Distribution
+
+August 30, 2023
+
+- Data submitted to the Open Data Portal in December 2022.
+- Preliminary QC (submitted to Open Data Portal)
+  - Obvious outliers removed.
+  - Suspected biofouling removed.
+- Filtered Data
+  - Additional suspect data trimmed (mostly drift over deployment)
+
+
+## Preliminary QC 
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 1: All observations
+```{r}
+#| label: fig-dist-all
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU).
+
+p <- plot_histogram(dat_all, hist_col = VALUE, binwidth = 0.5) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 2: By depth
+```{r}
+#| label: fig-dist-all-depth
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 3: By year
+```{r}
+#| label: fig-dist-all-year
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 4: County 
+```{r}
+#| label: fig-dist-county
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations by county (binwidth = 0.5 PSU).
+
+p <- dat_all %>% 
+  plot_histogram(hist_col = VALUE, binwidth = 0.5) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 5: County + Depth
+```{r}
+#| label: fig-dist-county-depth
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 6: County + Year
+```{r}
+#| label: fig-dist-county-year
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_all$COUNTY)
+
+dat_all <- dat_all %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_all %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 0.5, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+## Filtered Data
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 7: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU).
+
+p <- plot_histogram(dat_filt, hist_col = VALUE, binwidth = 0.5) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 8: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = VALUE, binwidth = 0.5,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 9: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 10: County 
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations by county (binwidth = 0.5 PSU).
+
+p <- dat_filt%>% 
+  plot_histogram(hist_col = VALUE, binwidth = 0.5) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 11: County + Depth
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 12: County + Year
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = VALUE, binwidth = 0.5, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_all$COUNTY)
+
+dat_filt<- dat_filt%>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_filt%>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 0.5, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+## Filtered Data - No Inverness
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 13: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU).
+
+p <- plot_histogram(dat_no_inverness, hist_col = VALUE, binwidth = 0.5) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 14: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), coloured by depth.
+
+p <- plot_histogram(
+  dat_no_inverness, hist_col = VALUE, binwidth = 0.5,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 15: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), coloured by year.
+
+p <- plot_histogram(
+  dat_no_inverness, hist_col = VALUE, binwidth = 0.5, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 16: County 
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations by county (binwidth = 0.5 PSU).
+
+p <- dat_no_inverness %>% 
+  plot_histogram(hist_col = VALUE, binwidth = 0.5) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 17: County + Depth
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_no_inverness, hist_col = VALUE, binwidth = 0.5, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 18: County + Year
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_no_inverness, hist_col = VALUE, binwidth = 0.5, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_no_inverness$COUNTY)
+
+dat_no_inverness <- dat_no_inverness %>% 
+  mutate(MONTH = month(MONTH, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_no_inverness %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = VALUE, binwidth = 0.5, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+## Inverness
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 19: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of salinity observations (binwidth = 0.5 PSU).
+
+p <- plot_histogram(dat_inverness, hist_col = VALUE, binwidth = 0.5) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+# Recommendations
+
+- Preliminary QC and Filtered Data pooled distributions are bimodal because of Inverness observations.
+
+
+

@@ -1,0 +1,451 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(purrr)
+library(RColorBrewer)
+library(readr)
+library(sensorstrings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Measured Depth (m)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# all data
+dat_all <- list.files(
+  here("reprocessed-data-raw"), full.names = TRUE, pattern = ".rds"
+) %>%
+  purrr::map(readRDS) %>%
+  list_rbind()  %>%
+  select(
+    -c(latitude, longitude, lease),
+    -contains("temperature"), -contains("dissolved_oxygen"),
+    -contains("salinity")
+  ) %>%
+  filter(
+    !is.na(sensor_depth_measured_m),
+    !(station == "Olding Island" &
+        deployment_range == "2022-Jun-03 to 2022-Sep-30" & 
+        sensor_depth_at_low_tide_m == 3)
+  ) %>% 
+  ss_pivot_longer() %>%
+  mutate(
+    depth_log = factor(sensor_depth_at_low_tide_m),
+    year = year(timestamp_utc),
+    year = factor(year),
+    month = month(timestamp_utc)
+  ) 
+
+# filtered data
+dat_filt <- dat_all %>% 
+  filter(
+    # freshwater stations
+    !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    # suspect range
+    !(station == "Long Beach" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-29" & depth_log == 5),
+    !(station == "Sandy Cove" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-30" & depth_log == 5),
+    !(station == "Tickle Island 1" & 
+        deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5)
+  ) 
+
+county_pal <- get_county_colour_palette(length(unique(dat_all$county)))
+depth_pal <- viridis(length(unique(dat_all$depth_log)), direction = -1)
+year_pal <- viridis(length(unique(dat_all$year)), option = "C")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+
+```
+
+
+# Measured Depth Distribution
+
+September 12, 2023
+
+- This data is from the reprocessed Coastal Monitoring Program data.
+ - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
+ 
+- Preliminary QC  
+  - Olding Island 2022-06-03 (3 m ) was removed due to obvious outliers. 
+ 
+- Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
+  - Freshwater Stations removed
+    - Not expected to have distinct tidal signal
+  - Long Beach and Sandy Cove (2020-Jul-16) 5 m data was removed because of very high tidal range relative to other deployments in the area.
+      - Likely that the strings were pushed over with the tide.
+  - Tickle Island (2020-Oct-21) 5 m data removed because of very high tidal range relative to other deployments in the area.
+    - Potential biofouling weighing down the string.
+
+## Preliminary QC
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 1: All observations
+
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m).
+
+p <- plot_histogram(dat_all, hist_col = value, binwidth = 2) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+#### Figure 2: By depth
+
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), coloured by depth.
+
+p <- plot_histogram(
+  dat_all , hist_col = value, binwidth = 2,
+  fill_col = depth_log, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+#### Figure 3: By year
+
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = value, binwidth = 2, 
+  fill_col = year, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+:::
+
+- Depths > 60 m were measured at Tickle Island, Guysborough.
+
+### String Configuration
+
+#### Figure 4
+
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by string configuration (binwidth = 2 m).
+
+p <- plot_histogram(dat_all , hist_col = value, binwidth = 2) +
+  facet_wrap(~string_configuration, ncol = 1, scales = "free_y") +
+  x_axis +
+   theme_facet_plotly
+
+ggplotly(p)
+```
+
+
+### County
+
+::: panel-tabset
+
+#### Figure 5: County 
+
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by county (binwidth = 2 m).
+
+p <- dat_all %>% 
+  plot_histogram(hist_col = value, binwidth = 2) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+
+#### Figure 6: County + Depth
+
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = value, binwidth = 2, fill_col = depth_log, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+
+#### Figure 7: County + Year
+
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = value, binwidth = 2, fill_col = year, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- sort(unique(dat_all$county) )
+
+dat_all <- dat_all %>% 
+  mutate(month = month(month, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_all %>% 
+    filter(county == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = value, binwidth = 2, fill_col = year, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~month, ncol = 3)  
+  
+  print(p)
+}
+
+```
+
+:::
+
+
+## Filtered Data
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 8: All observations
+
+```{r}
+#| label: fig-dist-all
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m).
+
+p <- plot_histogram(dat_filt, hist_col = value, binwidth = 2) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+#### Figure 9: By depth
+
+```{r}
+#| label: fig-dist-all-depth
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), coloured by depth.
+
+p <- plot_histogram(
+  dat_filt , hist_col = value, binwidth = 2,
+  fill_col = depth_log, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+#### Figure 10: By year
+
+```{r}
+#| label: fig-dist-all-year
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = value, binwidth = 2, 
+  fill_col = year, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+:::
+
+### String Configuration
+
+#### Figure 11
+
+```{r}
+#| label: fig-dist-confnig
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by string configuration (binwidth = 2 m).
+
+p <- plot_histogram(dat_filt , hist_col = value, binwidth = 2) +
+  facet_wrap(~string_configuration, ncol = 1, scales = "free_y") +
+  x_axis +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+
+### County
+
+::: panel-tabset
+
+#### Figure 12: County 
+
+```{r}
+#| label: fig-dist-county
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by county (binwidth = 2 m).
+
+p <- dat_filt %>% 
+  plot_histogram(hist_col = value, binwidth = 2) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+
+#### Figure 13: County + Depth
+
+```{r}
+#| label: fig-dist-county-depth
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = value, binwidth = 2, fill_col = depth_log, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+
+#### Figure 14: County + Year
+
+```{r}
+#| label: fig-dist-county-year
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 2 m), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = value, binwidth = 2, fill_col = year, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- sort(unique(dat_filt$county))
+
+dat_filt <- dat_filt %>% 
+  mutate(month = month(month, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_filt %>% 
+    filter(county == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = value, binwidth = 2, fill_col = year, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~month, ncol = 3)  
+  
+  print(p)
+}
+
+```
+
+:::
+
+# Recommendations
+
+- User thresholds based on historical data would not be useful at the county or station level because the measured depth depends mainly on where the sensor is placed on the string.
+  - Although some counties typically have more shallow or more deep sensors.
+- Measured sensor depth is not normally distributed for most counties.
+- Digby, Lunenburg, Richmond: 3 distinct depths measured.
+- Queens: mainly shallow depth measured.
+
+
+
+
+

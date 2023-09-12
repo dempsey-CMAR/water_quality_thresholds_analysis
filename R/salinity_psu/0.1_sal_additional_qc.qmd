@@ -1,0 +1,233 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8, fig.height = 6)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(strings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/filter_out_suspect_obs.R"))
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Salinity (PSU)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# data - preliminary QC 
+dat_all <- import_strings_data(input_path = here("data-raw")) %>% 
+ select(COUNTY, WATERBODY, STATION,
+       DEPLOYMENT_PERIOD,
+      TIMESTAMP, DEPTH, VARIABLE, VALUE) %>%
+  filter(VARIABLE == "Salinity" | VARIABLE == "Temperature") %>%
+  mutate(
+    DEPTH = factor(round(as.numeric(DEPTH))),
+    MONTH = month(TIMESTAMP),
+    YEAR = factor(year(TIMESTAMP))
+  ) 
+
+depl_sal <- dat_all %>% 
+  filter(VARIABLE == "Salinity") %>% 
+  distinct(COUNTY, STATION, DEPLOYMENT_PERIOD) %>% 
+  arrange(COUNTY, STATION) 
+
+dat_sal <- depl_sal %>% 
+  left_join(dat_all, by = c("COUNTY", "STATION", "DEPLOYMENT_PERIOD"))
+
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+
+storm_dates <- as_date(
+  c( "2016-10-10",
+     "2019-09-07",
+     "2020-09-23",
+     "2021-06-23",
+     "2021-07-10",
+     "2021-09-02",
+     "2022-09-24",
+     "2022-11-12"
+  ))
+
+```
+
+# Salinity Data
+
+August 29, 2023
+
+- Data submitted to the Open Data Portal in December 2022.
+
+- Preliminary QC (submitted to Open Data Portal)
+  - Obvious outliers removed.
+
+## Deployment Dates
+
+### Table 1
+```{r}
+depl_sal %>% 
+  separate(DEPLOYMENT_PERIOD, into = c("DEPL_START", "DEPL_END"), sep = " to ") %>% 
+  mutate(
+    DEPL_START = as_date(DEPL_START),
+    DEPL_END = as_date(DEPL_END),
+    DURATION_WEEKS = difftime(DEPL_END, DEPL_START, units = "week"),
+    DURATION_WEEKS = round(as.numeric(DURATION_WEEKS), digits = 2)
+  ) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+
+## Deployment Plots
+
+::: panel-tabset
+
+```{r, body} 
+#| results: 'asis'
+#| message: FALSE
+
+counties <- unique(depl_sal$COUNTY)
+
+for(i in seq_along(counties)) {
+  cat('\n##', counties[i], '\n')
+  
+  depl_i <- depl_sal %>% 
+    filter(COUNTY == counties[i])
+  
+  for(j in 1:nrow(depl_i)) {
+    
+    cat('\n###', depl_i$STATION[j], "-", depl_i$DEPLOYMENT_PERIOD[j], '\n')
+    
+    dat_j <- dat_sal %>% 
+      filter(
+        STATION == depl_i$STATION[j],
+        DEPLOYMENT_PERIOD == depl_i$DEPLOYMENT_PERIOD[j])
+    
+    depl_int <- interval(min(dat_j$TIMESTAMP), max(dat_j$TIMESTAMP))
+    
+    storms <- storm_dates[which(storm_dates %within% depl_int)]
+    
+    p <- ggplot_variables_at_depth(dat_j) +
+      geom_vline(xintercept = as_datetime(storms), col = 1, linetype = 2)
+    
+    subchunkify(p, fig_height = 5.5, fig_width = 8.5)
+    
+  }
+}
+
+```
+:::
+
+## Station Plots
+
+::: panel-tabset
+
+```{r, stations} 
+#| results: 'asis'
+#| message: FALSE
+
+stations <- unique(depl_sal$STATION)
+
+for(i in seq_along(stations)) {
+  cat('\n##', stations[i], '\n')
+  
+  dat_i <- dat_sal %>% 
+    filter(STATION == stations[i])
+  
+  depl_int <- interval(min(dat_i$TIMESTAMP), max(dat_i$TIMESTAMP))
+  
+  storms <- storm_dates[which(storm_dates %within% depl_int)]
+  
+  p <- ggplot_variables_at_depth(dat_i) +
+    geom_vline(xintercept = as_datetime(storms), col = 1, linetype = 2)
+  
+  subchunkify(p, fig_height = 5.5, fig_width = 8.5)
+  
+}
+
+```
+:::
+
+## QC Recommendations
+
+```{r}
+read_csv(
+  here("data/do_sal_additional_qc.csv"), show_col_types = FALSE) %>% 
+  select(-NOTES) %>% 
+  filter(VARIABLE == "Salinity") %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+*DNU = do not use for threshold analysis
+
+
+## Trimmed Data
+```{r}
+dat_filt <- dat_sal %>% 
+  mutate(UNITS = "PSU") %>% 
+  filter_out_suspect_obs()
+```
+
+::: panel-tabset
+
+```{r, filtered} 
+#| results: 'asis'
+#| message: FALSE
+
+stations <- unique(dat_filt$STATION)
+
+for(i in seq_along(stations)) {
+  cat('\n##', stations[i], '\n')
+  
+  dat_i <- dat_filt %>% 
+    filter(STATION == stations[i])
+  
+  depl_int <- interval(min(dat_i$TIMESTAMP), max(dat_i$TIMESTAMP))
+  
+  storms <- storm_dates[which(storm_dates %within% depl_int)]
+  
+  p <- ggplot_variables_at_depth(dat_i) +
+    geom_vline(xintercept = as_datetime(storms), col = 1, linetype = 2)
+  
+  subchunkify(p, fig_height = 5.5, fig_width = 8.5)
+  
+}
+
+```
+:::
+
+
+
+
+
+
+
+
+
+

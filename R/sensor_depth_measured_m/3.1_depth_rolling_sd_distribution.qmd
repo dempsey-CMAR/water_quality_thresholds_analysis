@@ -1,0 +1,567 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(sensorstrings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Measured Sensor Depth (m)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# data - preliminary QC (Olding Island Removed)
+dat_all <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>% 
+  select(
+    -c(sensor_type, int_sample, n_sample, 
+       rolling_sd_flag_sensor_depth_measured_m)) %>% 
+  na.omit() %>% 
+  ss_pivot_longer() %>%
+  mutate(
+    depth = factor(depth_log),
+    year = year(timestamp_utc),
+    year = factor(year),
+    month = month(timestamp_utc)
+  ) 
+  
+# filtered data
+dat_filt <- dat_all %>% 
+  filter(
+    # freshwater stations
+     !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    # suspect range
+     !(station == "Long Beach" & 
+         deployment_range == "2020-Jul-16 to 2020-Nov-29" & depth_log == 5),
+    !(station == "Sandy Cove" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-30" & depth_log == 5),
+    !(station == "Tickle Island 1" & 
+        deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5)
+  )
+
+county_pal <- get_county_colour_palette(length(unique(dat_all$county)))
+depth_pal <- viridis(length(unique(dat_all$depth)), direction = -1)
+year_pal <- viridis( length(unique(dat_all$year)), option = "C")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+
+```
+
+# Measured Sensor Depth: Rolling Standard Deviation Distribution
+
+September 12, 2023
+
+- This data is from the reprocessed Coastal Monitoring Program data.
+ - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
+ 
+- Preliminary QC  
+  - Olding Island 2022-06-03 (3 m ) was removed due to obvious outliers. 
+ 
+- Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
+  - Freshwater Stations not considered
+    - Not expected to have distinct tidal signal
+  - Long Beach and Sandy Cove (2020-Jul-16) 5 m data was removed because of very high depth range relative to other deployments in the area.
+      - Likely that the strings were pushed over with the tide.
+  - Tickle Island (2020-Oct-21) 5 m data removed because of very high depth range relative to other deployments in the area.
+    - Potential biofouling weighing down the string.
+
+## Preliminary QC
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 1: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m).
+
+p <- plot_histogram(dat_all, hist_col = sd_roll, binwidth = 0.2) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 2: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = sd_roll, binwidth = 0.2,
+  fill_col = depth, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 3: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = sd_roll, binwidth = 0.2, 
+  fill_col = year, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 4: County 
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured sensor depth observations by county (binwidth = 0.2 m).
+
+p <- dat_all %>% 
+  plot_histogram(hist_col = sd_roll, binwidth = 0.2) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 5: County + Depth
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = sd_roll, binwidth = 0.2, fill_col = depth, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 6: County + Year
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = sd_roll, binwidth = 0.2, fill_col = year, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+- Most sd_roll observations from Annapolis and Digby (and some Yarmouth) are > 1 (ie., in the tail of the Figure 1).
+- Guysborough
+  - Most of the sd_roll > 1 are from The Bull, which shows signal from Hurricane Teddy.
+- Halifax
+  - All sd_roll > 1 are from Shut-In Island (1 observation from Borgles Island)
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_all$county)
+
+dat_all <- dat_all %>% 
+  mutate(month = month(month, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_all %>% 
+    filter(county == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = sd_roll, binwidth = 0.2, fill_col = year, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~month, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+
+### Summary Statistics
+
+::: panel-tabset
+
+#### Figure 7: Central Tendancy
+```{r}
+#| fig-height: 6
+#| fig-cap: The mean and standard deviation of rolling standard deviation in each county.
+
+stats_all <- dat_all %>% 
+  summarise(
+    max = max(sd_roll),
+    mean = mean(sd_roll),
+    med = median(sd_roll),
+    stdev = sd(sd_roll),
+    
+    q_90 = quantile(sd_roll, prob = 0.90),
+    q_95 = quantile(sd_roll, prob = 0.95),
+    q_97 = quantile(sd_roll, prob = 0.97),
+    q_99 = quantile(sd_roll, prob = 0.99),
+    q_997 = quantile(sd_roll, prob = 0.997)
+  ) %>% 
+  mutate(county = "All") %>% 
+  bind_rows(
+    dat_all %>% 
+      group_by(county) %>% 
+      summarise(
+        max = max(sd_roll),
+        mean = mean(sd_roll),
+        med = median(sd_roll),
+        stdev = sd(sd_roll),
+        
+        q_90 = quantile(sd_roll, prob = 0.90),
+        q_95 = quantile(sd_roll, prob = 0.95),
+        q_97 = quantile(sd_roll, prob = 0.97),
+        q_99 = quantile(sd_roll, prob = 0.99),
+        q_997 = quantile(sd_roll, prob = 0.997)
+      ) 
+  ) %>%
+  mutate(
+    variable = "sensor_depth_measured_m",
+    thresh_3sd = mean + 3 * stdev,
+    across(.cols = where(is.numeric), .fns = round, digits = 2)
+  ) %>% 
+  select(county, everything())
+
+p <- plot_mean_sd_county(stats_all)
+
+ggplotly(p)
+```
+
+#### Figure 8: Quantiles
+```{r}
+#| fig-cap: Upper quantiles.
+#| fig-height: 6
+
+p <- stats_all %>% 
+  select(county, contains("q")) %>% 
+  pivot_longer(cols = contains("q"), names_to = "quantile") %>% 
+  ggplot(aes(quantile, value, group = county, col = county)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
+  scale_y_continuous(limits = c(0, 6))
+
+ggplotly(p)
+```
+
+#### Table 1: Summary statistics
+```{r}
+stats_all %>% 
+  select(-c(variable, max, contains("thresh"))) %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE)
+```
+
+:::
+
+## Filtered Data
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 9: All observations
+```{r}
+#| label: fig-dist-all
+#| fig-height: 6
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m).
+
+p <- plot_histogram(dat_filt, hist_col = sd_roll, binwidth = 0.2) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 10: By depth
+```{r}
+#| label: fig-dist-all-depth
+#| fig-height: 6
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.2,
+  fill_col = depth, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 11: By year
+```{r}
+#| label: fig-dist-all-year
+#| fig-height: 6
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.2, 
+  fill_col = year, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+
+#### Table 2
+Deployments with sd_roll > 1
+```{r}
+#| message: false
+
+dat_filt %>% 
+  filter(sd_roll > 1) %>% 
+  group_by(county, station, deployment_range) %>% 
+  summarise(n = n()) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 12: County 
+```{r}
+#| label: fig-dist-county
+#| fig-height: 8
+#| fig-cap: Distribution of measured sensor depth observations by county (binwidth = 0.2 m).
+
+p <- dat_filt %>% 
+  plot_histogram(hist_col = sd_roll, binwidth = 0.2) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 13: County + Depth
+```{r}
+#| label: fig-dist-county-depth
+#| fig-height: 8
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.2, fill_col = depth, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 14: County + Year
+```{r}
+#| label: fig-dist-county-year
+#| fig-height: 8
+#| fig-cap: Distribution of measured sensor depth observations (binwidth = 0.2 m), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_filt, hist_col = sd_roll, binwidth = 0.2, fill_col = year, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~county, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+- Most sd_roll observations from Annapolis and Digby (and some Yarmouth) are > 1 (ie., in the tail of the Figure 1).
+- Guysborough
+  - Most of the sd_roll > 1 are from The Bull, which shows signal from Hurricane Teddy.
+- Halifax
+  - All sd_roll > 1 are from Shut-In Island (1 observation from Borgles Island)
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_filt$county)
+
+dat_filt <- dat_filt %>% 
+  mutate(month = month(month, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_filt %>% 
+    filter(county == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = sd_roll, binwidth = 0.2, fill_col = year, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~month, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+
+### Summary Statistics
+
+::: panel-tabset
+
+#### Figure 15: Central Tendancy
+```{r}
+#| fig-height: 6
+#| fig-cap: The mean and standard deviation of rolling standard deviation in each county.
+#| label: fig-mean-filt
+
+stats_filt <- dat_filt %>% 
+  summarise(
+    max = max(sd_roll),
+    mean = mean(sd_roll),
+    med = median(sd_roll),
+    stdev = sd(sd_roll),
+    
+    q_90 = quantile(sd_roll, prob = 0.90),
+    q_95 = quantile(sd_roll, prob = 0.95),
+    q_97 = quantile(sd_roll, prob = 0.97),
+    q_99 = quantile(sd_roll, prob = 0.99),
+    q_997 = quantile(sd_roll, prob = 0.997)
+  ) %>% 
+  mutate(county = "All") %>% 
+  bind_rows(
+    dat_filt %>% 
+      group_by(county) %>% 
+      summarise(
+        max = max(sd_roll),
+        mean = mean(sd_roll),
+        med = median(sd_roll),
+        stdev = sd(sd_roll),
+        
+        q_90 = quantile(sd_roll, prob = 0.90),
+        q_95 = quantile(sd_roll, prob = 0.95),
+        q_97 = quantile(sd_roll, prob = 0.97),
+        q_99 = quantile(sd_roll, prob = 0.99),
+        q_997 = quantile(sd_roll, prob = 0.997)
+      ) 
+  ) %>%
+  mutate(
+    variable = "sensor_depth_measured_m",
+    thresh_3sd = mean + 3 * stdev,
+    across(.cols = where(is.numeric), .fns = round, digits = 2)
+  ) %>% 
+  select(county, everything())
+
+p <- plot_mean_sd_county(stats_all)
+
+ggplotly(p)
+```
+
+#### Figure 16: Quantiles
+```{r}
+#| fig-cap: Upper quantiles.
+#| fig-height: 6
+#| label: fig-quantiles-filt
+
+p <- stats_filt %>% 
+  select(county, contains("q")) %>% 
+  pivot_longer(cols = contains("q"), names_to = "quantile") %>% 
+  ggplot(aes(quantile, value, group = county, col = county)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
+  scale_y_continuous(limits = c(0, 6))
+
+ggplotly(p)
+```
+
+#### Table 1: Summary statistics
+```{r}
+stats_filt %>% 
+  select(-c(variable, max, contains("thresh"))) %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE)
+```
+
+:::
+
+## Notes
+
+- Threshold should be by county.
+  - Although Shelburne, Colchester, Lunenburg, Halifax. Queens, Richmond, and Guysborough are very similar.
+- Most counties are normally distributed.
+  - Main exception: Antigonish
+- What is causing the long tails for Guysborough and Halifax?
+- What is causing the 0's for Pictou?
+- Consider using mean +/- 3 sd, and NOT quartiles for depth.
+  

@@ -1,0 +1,138 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(sensorstrings)
+library(stringr)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Measured Sensor Depth (m)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# data - preliminary QC 
+dat_all <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>% 
+  select(
+    -c(sensor_type, int_sample, n_sample, 
+       rolling_sd_flag_sensor_depth_measured_m)) %>% 
+  ss_pivot_longer() %>%
+  mutate(variable = str_remove(variable, "value_")) %>% 
+  filter(
+    variable == "sensor_depth_measured_m", 
+    # did not record
+    !(station == "Olding Island" & 
+        deployment_range == "2022-Jun-03 to 2022-Sep-30")
+  ) 
+
+```
+
+# Measured Sensor Depth: Station Plots
+
+DRAFT September 11, 2023
+
+- This data is from the reprocessed Coastal Monitoring Program data.
+ - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
+ - No preliminary QC was applied to this data. 
+
+::: panel-tabset
+
+```{r, body} 
+#| results: 'asis'
+#| message: FALSE
+
+counties <- unique(dat_all$county)
+
+for(i in seq_along(counties)) {
+  cat('\n##', counties[i], '\n')
+  
+  stations_i <- dat_all %>% 
+    filter(county == counties[i]) %>% 
+    distinct(station)
+  stations_i <- stations_i$station
+  
+  for(j in 1:length(stations_i)) {
+    
+    cat('\n###', stations_i[j], '\n')
+    
+    dat_j <- dat_all %>% 
+      filter(station == stations_i[j]) %>% 
+      mutate(depth_log = factor(depth_log)) 
+    
+    depl_start <- dat_j %>% 
+      group_by(deployment_range) %>% 
+      summarise(depl_start = min(timestamp_utc))
+    depl_start <- depl_start$depl_start
+    
+    depth_pal <- viridis(length(unique(dat_j$depth_log)), direction = -1)
+    
+    # height of figure j
+    n_depth <- length(unique(dat_j$depth_log))
+    
+    if(n_depth == 1) h = 2.75
+    if(n_depth > 1) h = 2.75 * n_depth
+    
+    p <- ggplot(
+      dat_j, 
+      aes(timestamp_utc, value, col = depth_log)
+    ) +
+      geom_point() +
+      scale_colour_manual(values = depth_pal) +
+      geom_vline(xintercept = depl_start, linetype = "dashed") +
+      #geom_line(linewidth = 0.25) +
+      theme(legend.position = "none") + 
+      facet_wrap(~depth_log, ncol = 1)
+    
+    subchunkify(p, fig_height = h, fig_width = 8.5)
+    
+  }
+}
+
+```
+:::
+
+# Notes
+
+- VR2 sensors do not record decimal places.
+- Digby
+  - Hourglass Lake sensor malfunctioned
+  - Long Beach and Sandy Cove 5 m sensors likely pulled by tide (very large range)
+- Guysborough
+  - Center Bay has an interesting signal over 5 deployments (~ 4 years)
+  - Looks like Madeline Point 1 moved
+  - Tickle Island 5 m sensor likely impacted by biofouling 
+- Halifax
+  - Shut-In Island: data suggests string moved during the 4th deployment
+- Queens
+  - Mersey Point 5 m sensor possibly impacted by biofouling.
+
+

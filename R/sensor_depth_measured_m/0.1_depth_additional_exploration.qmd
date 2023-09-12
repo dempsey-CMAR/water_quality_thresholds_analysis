@@ -1,0 +1,617 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width=8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(purrr)
+library(RColorBrewer)
+library(readr)
+library(sensorstrings)
+library(stringr)
+library(summaryplots)
+library(tidyr)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# all data
+dat_raw <- list.files(
+  here("reprocessed-data-raw"), full.names = TRUE, pattern = ".rds"
+) %>%
+  purrr::map(readRDS) %>%
+  list_rbind() 
+
+# sensor depth
+dat <- dat_raw %>%   
+  filter(!is.na(sensor_depth_measured_m)) %>%
+  ss_pivot_longer() %>%
+  rename(depth_log = sensor_depth_at_low_tide_m) %>%
+  filter(variable == "sensor_depth_measured_m")
+
+county_pal <- get_county_colour_palette(length(unique(dat$county)))
+theme_facet_plotly <- theme(panel.spacing.y = unit(25, "lines"))
+```
+
+# EXPLORATORY ANALYSIS: SENSOR DEPTH
+
+September 12, 2023
+
+- This data is from the reprocessed Coastal Monitoring Program data.
+ - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
+- No preliminary QC was applied prior to this analysis.
+ 
+## Deployments
+
+```{r}
+# total number of deployments
+n_depl <- dat_raw %>% 
+   distinct(county, station, deployment_range)
+
+# deployments with measured depth
+depls <- dat %>% 
+  distinct(
+    county, station, deployment_range, 
+    sensor_type, sensor_serial_number,
+    string_configuration, depth_log) %>% 
+  arrange(county, station)
+
+# deployments with more than one depth sensor
+n_sensors <- depls %>% 
+  group_by(county, station, deployment_range) %>% 
+  mutate(n = n()) %>% 
+  filter(n > 1) %>% 
+  distinct(county, station, deployment_range)
+```
+
+- Total number of deployments: `r nrow(n_depl)` 
+- Deployments with at least one depth sensor: `r nrow(depls %>% distinct(county, station, deployment_range))` 
+- Deployments with 2 or more depth sensors: `r nrow(n_sensors)`
+- Deployments with sensor attached to fixed structure: `r  (depls %>% group_by(string_configuration) %>% summarise(n = n()) %>% filter(string_configuration == "attached to fixed structure"))$n`
+- Deployments with sensor attached to surface buoy: `r  (depls %>% group_by(string_configuration) %>% summarise(n = n()) %>% filter(string_configuration == "surface buoy"))$n`
+- Deployments with aquameasure sensors that measure depth: `r  nrow(depls %>% filter(sensor_type == "aquameasure"))`
+- Deployments with vemco sensors that measure depth: `r  nrow(depls %>% filter(sensor_type == "vr2ar"))`
+
+### Table 1
+
+Deployments with measured sensor depth.
+
+```{r}
+depls %>% 
+  select(-c(string_configuration, sensor_type)) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+<br>
+
+### Table 2
+
+Sensors that measure depth.
+
+```{r}
+depls %>% 
+  distinct(sensor_type, sensor_serial_number) %>% 
+  arrange(sensor_type, sensor_serial_number) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+  
+```
+
+## Freshwater Stations
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+depl_fresh <- depls %>% 
+  filter(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")
+)
+
+for(i in 1:nrow(depl_fresh)){
+  depl_i <- depl_fresh[i, ]
+  
+  cat('\n###', 
+      paste(depl_i$station, 
+            str_split(depl_i$deployment_range, pattern = " to ")[[1]][1]), 
+      '\n')
+
+    dat_i <-  dat %>%
+      filter(
+        station == depl_i$station,
+        deployment_range == depl_i$deployment_range)  
+
+      # height of figure j
+      n_sensor <- length(unique(dat_i$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_i,
+        aes(timestamp_utc, value, colour = factor(depth_log))
+      ) +
+        geom_point() +
+        scale_y_continuous("Measured Sensor Depth (m)") +
+        scale_x_datetime("Date") +
+        scale_colour_viridis_d(direction = -1) +
+        facet_wrap(~depth_log, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+- Looks like Hourglass Lake sensor malfunctioned.
+- What causes the changes in depth for Piper Lake?
+  - Spring melt?
+
+## Configuration
+
+### Fixed Structure
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+depl_fixed <- depls %>% 
+  filter(string_configuration == "attached to fixed structure")
+
+for(i in 1:nrow(depl_fixed)){
+  depl_i <- depl_fixed[i, ]
+  
+  cat('\n####', 
+      paste(depl_i$station, 
+            str_split(depl_i$deployment_range, pattern = " to ")[[1]][1]), 
+      '\n')
+
+    dat_i <-  dat %>%
+      filter(
+        station == depl_i$station,
+        deployment_range == depl_i$deployment_range)  
+
+      # height of figure j
+      n_sensor <- length(unique(dat_i$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_i,
+        aes(timestamp_utc, value, colour = factor(depth_log))
+      ) +
+        geom_point() +
+        scale_y_continuous("Measured Sensor Depth (m)") +
+        scale_x_datetime("Date") +
+        scale_colour_viridis_d(direction = -1) +
+        facet_wrap(~depth_log, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+
+### Surface Buoy
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+depl_surface <- depls %>% 
+  filter(string_configuration == "surface buoy")
+
+for(i in 1:nrow(depl_surface)){
+  depl_i <- depl_surface[i, ]
+  
+  cat('\n####', 
+      paste(depl_i$station, 
+            str_split(depl_i$deployment_range, pattern = " to ")[[1]][1]), 
+      '\n')
+
+    dat_i <-  dat %>%
+      filter(
+        station == depl_i$station,
+        deployment_range == depl_i$deployment_range)  
+
+      # height of figure j
+      n_sensor <- length(unique(dat_i$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_i,
+        aes(timestamp_utc, value, colour = factor(depth_log))
+      ) +
+        geom_point() +
+        scale_y_continuous("Measured Sensor Depth (m)") +
+        scale_x_datetime("Date") +
+        scale_colour_viridis_d(direction = -1) +
+        facet_wrap(~depth_log, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+- Why is the depth changing for the deployments attached to a surface buoy? Expected the sensor to float and depth to stay consistent.
+  - There could be slack in the line, so the buoy sinks at slack tide, and is pulled near the surface when the tide moves more quickly.
+- Harbour Island: attached to two small orange surface buoys.
+- Sober Island: surface buoy recorded in log.
+  - Other Sober Island deployments have an acoustic release.
+
+
+## Investigate Pictou
+
+- Based on figures in 1.1_explore_depth.html, at least one Pictou deployment has bad data.
+
+### Figure 1
+```{r}
+#| fig-height: 8
+p <- dat %>% 
+  filter(county == "Pictou") %>% 
+  ggplot(aes(timestamp_utc, value, col = factor(depth_log))) +
+  geom_point() +
+  scale_colour_viridis_d(direction = -1) +
+  facet_wrap(~station, ncol = 1)
+
+ggplotly(p)
+
+```
+
+</br>
+
+- Pictou depth sensor data remove: Olding Island, 2022-Jun-03 to 2022-Sep-30, 3 m (aquaMeasure DOT	675008)
+
+# Filtered Data
+
+```{r}
+#| message: FALSE
+
+dat_filt <- dat %>% 
+   # Freshwater stations
+   filter(
+     !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+     !(station == "Olding Island" & 
+         deployment_range == "2022-Jun-03 to 2022-Sep-30" &
+         sensor_depth_at_low_tide_m == 3)
+   )
+
+depth_stats <- dat_filt %>% 
+  group_by(county, station, deployment_range, string_configuration, depth_log) %>% 
+  summarise(
+    min = min(value),
+    max = max(value),
+    mean = mean(value),
+    range = max - min
+  ) %>% 
+  mutate(
+    diff = depth_log - min,
+    across(where(is.numeric), round, digits = 2)) %>% 
+  ungroup()
+```
+
+
+- Filter out freshwater stations.
+- Filter out Olding Island 2022-Jun-03 (3 m).
+- Number of deployments with at least one depth sensor: `r nrow(dat_filt %>% distinct(county, station, deployment_range))` 
+- Number of deployments with 2 depth sensors: `r nrow(dat_filt %>% distinct(county, station, deployment_range, depth_log)  %>%  group_by(county, station, deployment_range) %>%  mutate(n = n()) %>% filter(n > 1) %>%  distinct(county, station, deployment_range))`
+
+### Table 2
+```{r}
+depth_stats %>% 
+  separate(deployment_range, into = c("depl_date", NA), sep = " to") %>% 
+  select(-c(diff, string_configuration)) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+## Range
+
+- Range is the difference between the deepest and shallowest measured depth.
+
+::: panel-tabset
+### Figure 2
+```{r}
+#| fig-height: 4
+
+p <- plot_histogram(depth_stats, hist_col = "range", binwidth = 1)
+
+ggplotly(p)
+```
+
+### Figure 3
+```{r}
+#| fig-height: 10
+p <- plot_histogram(depth_stats, hist_col = "range", binwidth = 1) +
+  facet_wrap(~county, ncol = 3, scales = "free_y") +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+### Figure 4
+```{r}
+#| fig-height: 6
+
+p <- plot_histogram(depth_stats, hist_col = "range", binwidth = 1) +
+  facet_wrap(~string_configuration, ncol = 1) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+### Deployments with large range (> 10 m)
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+large_range <- depth_stats %>% filter(range > 10)
+
+for(i in 1:nrow(large_range)){
+  depl_i <- large_range[i, ]
+  
+  cat('\n####', 
+      paste(
+        depl_i$station, 
+        str_split(depl_i$deployment_range, pattern = " to ")[[1]][1]),
+      '\n')
+
+    dat_i <-  dat_filt %>%
+      filter(
+        station == depl_i$station,
+        deployment_range == depl_i$deployment_range
+      )  
+
+      # height of figure j
+      n_sensor <- length(unique(dat_i$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_i,
+        aes(timestamp_utc, value, colour = factor(depth_log))
+      ) +
+        geom_point() +
+        scale_y_continuous("Measured Sensor Depth (m)") +
+        scale_x_datetime("Date") +
+        scale_colour_viridis_d(direction = -1) +
+        facet_wrap(~depth_log, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+- Long Beach, St. Marys Bay, Digby.
+  - The 5 m sensor had a range of 20.0 m, but the 30 m sensor had a range of 7 m.
+  - Other Long Beach deployment ranges were 8 m.
+  - [Tide chart](https://www.tideschart.com/Canada/Nova-Scotia/St_-Marys-Bay/) shows typical tidal range in the bay is ~ 4 m.
+  - Recommend filtering out the depth data from the 5 m sensor (675014).
+ 
+- Sandy Cove, St. Mary's Bay, Digby
+  - The 5 m sensor had a range of 11.5 m, but the 18 m sensor had a rnage of 7 m.
+  - Other Sandy Cove deployment ranges were 6 - 8 m.
+  - Recommend filtering out the depth data from the 5 m sensor (675015).
+
+- The Bull, New Harbour, Guysborough
+  - Depth range seems reasonable for most of the deployment.
+  - There is a spike in the 5 m and 28 m sensor on September 23, 2020, which is when Hurricane Teddy hit Nova Scotia.
+  - This data is likely correct and "Of Interest"
+  - Data is not typical, so could be removed before the thresholds analysis.
+
+- Tickle Island, Chedabucto Bay, Guysborough County
+  - The 5 m sensor had a depth range of 27.9 m.
+  - The other Tickle Island deployments had a depth range of 2 - 3 m.
+  - Potentially biofouling weighing down the string.
+  -  [Tide chart](https://www.tideschart.com/Canada/Nova-Scotia/St_-Marys-Bay/) shows typical tidal range in the area is ~ 1 m.
+  - Recommend filtering out the data from the 5 m sensor (675009).
+  
+- Possible that the large range for these deployments is from strong tides causing the string to be pushed horizontal. This would explain why the VR2 sensors (which are close to the bottom) are not as affected.
+
+## Comparison to Log Depth
+
+- Log depth is the estimated sensor depth at low tide.
+- Long Beach 2020-07-16, Sandy Cove 2020-07-16, and Tickle Island 1 2020-10-21 filtered out.
+
+### Table 3
+```{r}
+depth_stats <- depth_stats %>% 
+  filter(
+    !(station == "Long Beach" & deployment_range == "2020-Jul-16 to 2020-Nov-29" & depth_log == 5),
+    !(station == "Sandy Cove" & deployment_range == "2020-Jul-16 to 2020-Nov-30" & depth_log == 5),
+    !(station == "Tickle Island 1" & deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5)
+  )
+
+depth_stats %>% 
+  separate(deployment_range, into = c("depl_date", NA), sep = " to") %>% 
+  select(-c(range, mean, string_configuration)) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+<br>
+
+::: panel-tabset
+### Figure 5
+```{r}
+#| fig-height: 6
+
+p <- ggplot(
+  depth_stats, 
+  aes(
+    depth_log, min, col = factor(depth_log),
+    text = paste0(
+      "depth_log: ", depth_log, "\n",
+      "min_measured: ", min, "\n",
+      "station: ", station, "\n",
+      "depl: ", deployment_range))) +
+  geom_abline(slope = 1, intercept = 0, col = "grey30") +
+  geom_point() 
+
+ggplotly(p, tooltip = "text")
+```
+
+### Figure 6
+```{r}
+p <- plot_histogram(depth_stats, hist_col = diff, binwidth = 1) + 
+  scale_x_continuous("depth_log - min_measured")
+
+ggplotly(p)
+```
+
+### Figure 7
+```{r}
+abs_diff <- depth_stats %>%
+  mutate(abs_diff = abs(diff))
+    
+p <- plot_histogram(abs_diff, hist_col = abs_diff, binwidth = 1) +
+  scale_x_continuous("abs(depth_log - min_measured)")
+
+ggplotly(p)
+```
+
+### Table 4
+
+```{r}
+
+abs_diff %>% 
+  mutate(
+    difference = case_when(
+    abs_diff == 0 ~ "0_exact",
+    abs_diff >= 0 & abs_diff < 1 ~ "between 0 and 1 m",
+    abs_diff >= 1 & abs_diff < 2 ~ "between 1 and 2 m",
+    abs_diff >= 2 & abs_diff < 3 ~ "between 2 and 3 m",
+    abs_diff >= 3 & abs_diff < 4 ~ "between 3 and 4 m",
+    abs_diff >= 4 & abs_diff < 5 ~ "between 4 and 5 m",
+    abs_diff >= 5 & abs_diff < 6 ~ "between 5 and 6 m",
+    abs_diff >= 6 & abs_diff < 7 ~ "between 6 and 7 m",
+    abs_diff >= 7 ~ "greater than 7 m"
+  )
+  ) %>% 
+  group_by(difference) %>% 
+  summarise(`number of deployments` = n()) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+
+```
+
+:::
+
+### Deployments with large difference (>= 5 m)
+
+- Absolute difference between minimum measured depth and estimated depth at low tide.
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+large_diff <- depth_stats %>% 
+  mutate(abs_diff = abs(diff)) %>% 
+  filter(abs_diff >= 5)
+
+for(i in 1:nrow(large_diff)){
+  depl_i <- large_diff[i, ]
+
+  cat('\n####', 
+      paste(depl_i$station, 
+            str_split(depl_i$deployment_range, pattern = " to ")[[1]][1]), 
+      '\n')
+
+    dat_i <-  dat_filt %>%
+      filter(
+        station == depl_i$station,
+        deployment_range == depl_i$deployment_range)  
+
+      # height of figure j
+      n_sensor <- length(unique(dat_i$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_i,
+        aes(timestamp_utc, value, colour = factor(depth_log))
+      ) +
+        geom_point() +
+        scale_y_continuous("Measured Sensor Depth (m)") +
+        scale_x_datetime("Date") +
+        scale_colour_viridis_d(direction = -1) +
+        facet_wrap(~depth_log, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+- Madeline Point 1 2020-Feb-26 was 19 m deeper than recorded in the log.
+- Shut-In Island 2020-Nov-08 moved to a shallower location.
+- Include a flag for estimated depth.
+
+## Negative Depths
+
+```{r}
+dat_filt %>% 
+  filter(value < 0) %>% 
+  select(county, station, 
+         sensor_type, serial_number = sensor_serial_number, 
+         depth_log, depth_measured = value) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+
+
+

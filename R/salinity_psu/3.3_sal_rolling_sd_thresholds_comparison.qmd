@@ -1,0 +1,433 @@
+---
+title: "Salinity: Rolling Standard Deviation Thresholds Comparison"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(data.table)
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(gtools)
+library(here)
+library(knitr)
+library(lubridate)
+library(plotly)
+library(qaqcmar)
+library(readr)
+library(strings)
+library(sensorstrings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/filter_out_suspect_obs.R"))
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# reprocessed data (no preliminary QC)
+dat_roll <- readRDS(here("data/sal_rolling_sd_reprocessed.rds")) %>%
+  select(-c(int_sample, n_sample, rolling_sd_flag_salinity_psu)) %>%
+  na.omit() %>%
+  separate(col = deployment_range, into = c("depl_date", NA), sep = " to ") %>% 
+  mutate(
+    county_sal_roll_sd = 
+      if_else(county == "Inverness", "Inverness", NA_character_)
+  )
+
+# calculate potential do thresholds from filtered data
+# calculate thresholds
+thresholds <- readRDS(here("data/sal_rolling_sd_prelim_qc.rds")) %>%
+  select(-c(sensor_type, int_sample, n_sample, rolling_sd_flag_salinity_psu)) %>%
+  mutate(
+    depth = factor(sensor_depth_at_low_tide_m),
+    year = factor(year(timestamp_utc)),
+    month = month(timestamp_utc)
+  ) %>%
+  na.omit() %>%
+  ss_pivot_longer() %>%
+  select(
+    COUNTY = county,
+    STATION = station,
+    DEPLOYMENT_PERIOD = deployment_range,
+    TIMESTAMP = timestamp_utc,
+    everything()) %>%
+  mutate(VARIABLE = "Salinity", UNITS = "PSU") %>%
+  filter_out_suspect_obs() %>%
+  select(-c(VARIABLE, UNITS)) %>%
+  rename(
+    county = COUNTY,
+    station = STATION,
+    deployment_range = DEPLOYMENT_PERIOD,
+    timestamp_utc = TIMESTAMP
+  ) %>%
+  ss_pivot_wider() %>%
+  mutate(
+    county_sal_roll_sd = if_else(county == "Inverness", "Inverness", NA_character_)
+  ) %>%
+  group_by(county_sal_roll_sd) %>%
+  summarise(
+    q_90 = quantile(sd_roll, prob = 0.90),
+    q_95 = quantile(sd_roll, prob = 0.95),
+    q_97 = quantile(sd_roll, prob = 0.97),
+    q_99 = quantile(sd_roll, prob = 0.99),
+    q_997 = quantile(sd_roll, prob = 0.997)
+  )
+
+dat_summary <- dat_roll %>%
+  left_join(thresholds, by = "county_sal_roll_sd") %>% 
+  mutate(
+    thresh_q90 = case_when(
+      sd_roll > q_90 ~ 3,
+      sd_roll <= q_90 ~ 1,
+      is.na(sd_roll) ~ 2),
+    thresh_q95 = case_when(
+      sd_roll > q_95 ~ 3,
+      sd_roll <= q_95 ~ 1,
+      is.na(sd_roll) ~ 2),
+    thresh_q97 = case_when(
+      sd_roll > q_97 ~ 3,
+      sd_roll <= q_97 ~ 1,
+      is.na(sd_roll) ~ 2),
+    thresh_q99 = case_when(
+      sd_roll > q_99 ~ 3,
+      sd_roll <= q_99 ~ 1,
+      is.na(sd_roll) ~ 2),
+    thresh_q997 = case_when(
+      sd_roll > q_997 ~ 3,
+      sd_roll <= q_997 ~ 1,
+      is.na(sd_roll) ~ 2)
+  ) %>%
+  pivot_longer(
+    cols = contains("thresh"),
+    names_to = "threshold",
+    values_to = "threshold_value", names_prefix = "thresh_"
+  ) %>%
+  filter(threshold %in% c("q90", "q95", "q997"))
+
+county_pal <- get_county_colour_palette(length(unique(dat_roll$county)))
+flag_colours <- c("chartreuse4", "#E6E1BC", "#EDA247", "#DB4325", "grey24")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(20, "lines"),
+  panel.spacing.x = unit(15, "lines")
+)
+```
+
+September 1, 2023
+
+- This file compares potential rolling standard deviation thresholds.
+- Potential thresholds are the upper quantiles (q90, q95, and q99.7) of the pooled data.
+- Thresholds were calculated based on the filtered data. 
+    - Suspected biofouling and obvious outliers were removed.
+    - Fresh water and other outlier stations were removed.
+- Additional suspected drift from biofouling was removed.
+- These thresholds are applied to the re-processed data to assess which threshold will be the most useful for automated QC.
+  - No preliminary QC was applied to the reprocessed data.
+  - A substantial number of these observations is expected to be biofouling.
+  
+- Potential thresholds:
+```{r}
+thresholds %>% 
+   select(county_sal_roll_sd, contains("q")) %>% 
+  mutate(
+    county = if_else(is.na(county_sal_roll_sd), "Other", "Inverness")
+  ) %>% 
+  select(-county_sal_roll_sd) %>% 
+  select(county, everything()) %>% 
+  datatable(
+    width = "500px",
+    list(
+      dom = 'ft',
+      searching = FALSE,
+      paging = FALSE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE
+  )
+```
+
+
+## Pooled
+
+The percent of all observations flagged with each potential threshold.
+
+::: panel-tabset
+
+### Figure 1
+```{r}
+summary_all <- dat_summary %>%
+  group_by(threshold) %>%
+  summarise(n_obs = n(), n_suspect = sum(threshold_value == 3)) %>%
+  mutate(percent_suspect = round((100 * n_suspect / n_obs), digits = 3)) %>%
+  ungroup()
+
+p <- ggplot(summary_all, aes(percent_suspect, threshold)) +
+  geom_col(
+    col = 1, fill = "#AE1759FF",
+    position = position_dodge2(preserve = "single", padding = 0)
+  ) +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(
+    "Percent of Observations", expand = expansion(mult = c(0, 0.1))
+  ) +
+  scale_y_discrete(name = "Threshold", limits = rev)
+
+ggplotly(p)
+```
+
+### Table 1
+```{r}
+datatable(
+  summary_all,
+  options = list(
+    dom = 'ft',
+    paging = FALSE,
+    searching = FALSE,
+    columnDefs = list(list(className = 'dt-center', targets = "_all"))), rownames = FALSE)
+```
+:::
+
+## By County
+
+The percent of observations within each county flagged with each potential threshold.
+
+::: panel-tabset
+
+### Figure 2
+```{r}
+#| fig-height: 6
+#| message: false
+
+summary_county <- dat_summary %>%
+  group_by(county, threshold) %>%
+  summarise(n_obs = n(), n_suspect = sum(threshold_value == 3)) %>%
+  mutate(percent_suspect = round((100 * n_suspect / n_obs), digits = 3)) %>%
+  ungroup()
+
+p <- ggplot(summary_county, aes(percent_suspect, threshold)) +
+  geom_col(
+    col = 1, fill = "#AE1759FF",
+    position = position_dodge2(preserve = "single", padding = 0)
+  ) +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(
+    "Percent of Observations", expand = expansion(mult = c(0, 0.1))
+  ) +
+  scale_y_discrete(name = "Threshold", limits = rev) +
+  facet_wrap(~county, ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+### Table 2
+```{r}
+summary_county %>%
+  select(-c(n_obs, n_suspect)) %>%
+  pivot_wider(names_from = "threshold", values_from = "percent_suspect") %>%
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+:::
+
+## By Deployment
+
+The percent of observations within each deployment flagged with each potential threshold.
+
+The `diff` column shows difference between the percent of observations flagged with the q_90 threshold and the q_997 threshold.
+
+### Table 3
+```{r}
+#| message: false
+
+summary_depl <- dat_summary %>%
+  group_by(county, station, depl_date, threshold) %>%
+  summarise(n_obs = n(), n_suspect = sum(threshold_value == 3)) %>%
+  mutate(percent_suspect = round((100 * n_suspect / n_obs), digits = 3)) %>%
+  ungroup() %>% 
+  select(-c(n_obs, n_suspect)) %>% 
+  pivot_wider(names_from = "threshold", values_from = "percent_suspect") %>%
+  mutate(
+    diff = q90 - q997,
+    across(where(is.numeric), .fn = round, digits = 2)
+  )
+
+summary_depl %>% 
+   datatable(options = dt_options, rownames = FALSE)
+```
+
+</br>
+
+## Deployments with Largest `diff`
+
+These figures show the flagged observations for each threshold for the deployments with the largest difference between thresholds.
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+depl <- summary_depl %>% 
+  arrange(desc(diff)) %>% 
+  filter(diff >= 30)
+
+thresh_plot <- unique(dat_summary$threshold)
+
+for(i in 1:nrow(depl)){
+ 
+  depl_i <- depl[i, 1:3]
+  
+  cat('\n###', paste(depl_i$station, depl_i$depl_date), '\n')
+  
+  for(j in seq_along(thresh_plot)) {
+    
+    cat('\n####', thresh_plot[j], '\n')
+    
+    dat_j <-  dat_summary %>% 
+      filter(
+        station == depl_i$station, 
+        depl_date == depl_i$depl_date, 
+        threshold == thresh_plot[j]
+        )  %>%
+      mutate(
+        depth = paste0(
+          sensor_depth_at_low_tide_m, " m", 
+          " (", sensor_serial_number, ")"),
+        depth = ordered(depth, levels = gtools::mixedsort(unique(depth)))
+      ) %>% 
+      rename(sd_rolling_flag_value = threshold_value) %>% 
+      qc_assign_flag_labels() 
+    
+    # height of figure j
+    n_sensor <- length(unique(dat_j$sensor_serial_number))
+    
+    if(n_sensor == 1) h = 2.75
+    if(n_sensor > 1) h = 2.75 * n_sensor
+    
+    p <- ggplot(
+      dat_j, 
+      aes(timestamp_utc, value_salinity_psu, 
+          colour = sd_rolling_flag_value )
+      ) +
+      geom_point()+
+      scale_y_continuous("Salinity (PSU)") +
+      scale_x_datetime("Date") +
+      scale_colour_manual("Flag Value", values = flag_colours, drop = FALSE) +
+      facet_wrap(~depth, ncol = 1) +
+      theme_light() +
+      theme(
+        legend.position = "none",
+        strip.text = element_text(colour = "black", size = 10),
+        strip.background = element_rect(fill = "white", colour = "darkgrey")
+      ) #+
+      #guides(color = guide_legend(override.aes = list(size = 4)))
+    
+    subchunkify(p, fig_height = h, fig_width = 8.5)
+    
+  }
+}
+```
+:::
+
+## Deployments of Interest
+
+These figures show the flagged observations for each threshold for several deployments with notable salinity signals.
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+depl <- data.frame(
+  station = c("0814x East", "0814x West",
+              "5005", "Antigonish 3",
+              "Fishermans Island", "Ram Island"),
+  depl_date = c("2020-Sep-09", "2020-Sep-09",
+                "2021-May-14", "2022-Jun-08",
+                "2021-Sep-08", "2021-Jul-08")
+  )
+
+
+for(i in 1:nrow(depl)){
+  depl_i <- depl[i, ]
+
+  cat('\n###', paste(depl_i$station, depl_i$depl_date), '\n')
+
+  for(j in seq_along(thresh_plot)) {
+
+    cat('\n####', thresh_plot[j], '\n')
+
+    dat_j <-  dat_summary %>%
+      filter(
+        station == depl_i$station,
+        depl_date == depl_i$depl_date,
+        threshold == thresh_plot[j])  %>%
+      mutate(
+        depth = paste0(
+          sensor_depth_at_low_tide_m, " m",
+          " (", sensor_serial_number, ")"),
+        depth = ordered(depth, levels = gtools::mixedsort(unique(depth)))
+      ) %>%
+      rename(sd_rolling_flag_value = threshold_value) %>%
+      qc_assign_flag_labels()
+
+    if(nrow(dat_j) > 0) {
+
+      # height of figure j
+      n_sensor <- length(unique(dat_j$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_j,
+        aes(timestamp_utc, value_salinity_psu,
+            colour = sd_rolling_flag_value )
+      ) +
+        geom_point()+
+        scale_y_continuous("Salinity (PSU)") +
+        scale_x_datetime("Date") +
+        scale_colour_manual("Flag Value", values = flag_colours, drop = FALSE) +
+        facet_wrap(~depth, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+    }
+  }
+}
+```
+:::
+
+## Conclusions
+
+- Consider test to detect sensor drift 
+  - e.g., slope of line from average of first day to last day.
+  - See Fisherman's Island 2021-Sep-08, Wedgeport 2020-Sep-16
+  
+- Use q95
+  - q90 has false positives, while q997 misses some suspect changes (false negatives)
+    - Ram Island 2021-Jul-08
+    - Birchy Head 2019-May-02
+

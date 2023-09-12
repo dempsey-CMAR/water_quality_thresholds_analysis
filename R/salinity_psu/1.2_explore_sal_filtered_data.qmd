@@ -1,0 +1,511 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width=8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(RColorBrewer)
+library(readr)
+library(summaryplots)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+dat <- read_csv(here("data/2_summary_filtered_data.csv"), show_col_types = FALSE) %>% 
+  filter(variable == "Salinity")
+
+st_locations <- read_csv(
+  here("data/Station_Locations_2022-12-06.csv"), show_col_types = FALSE
+)
+
+county_pal <- get_county_colour_palette(length(unique(st_locations$COUNTY)))
+
+theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
+```
+
+# EXPLORATORY ANALYSIS: SALINITY
+
+August 30, 2023
+
+- Data submitted to the Open Data Portal in December 2022.
+- Depth rounded to nearest whole number
+- Preliminary QC was applied to the data.
+  - Obvious outliers removed.
+- Additional QC was applied based on review of 1.1_explore_sal.html and 0.1_sal_additional_qc.html
+  - Trimmed sensor drift
+
+## Station Locations
+
+Approximate location of stations with salinity data.
+Marker size is proportional to the number of salinity observations within the county.
+
+```{r}
+#| fig-height: 7
+
+# join the station locations dataset with the number of obs from each station
+st_locations <- st_locations %>% 
+  inner_join(
+    dat %>% 
+      filter(group == "all_station") %>% 
+      select(COUNTY = county, STATION = station, n),
+    by = c("COUNTY", "STATION") 
+  ) %>% 
+  group_by(COUNTY) %>% 
+  mutate(
+    n_prop = round(n / sum(n), digits = 2),
+    popup = paste(COUNTY, STATION, n_prop, sep = "</br>")
+  ) 
+
+# interactive map
+leaflet(st_locations) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  add_circle_markers_county(
+    county_pal = county_pal, 
+    size =  ~n_prop * 25
+  ) %>% 
+  add_county_fill_legend(county_pal = county_pal)
+
+```
+
+```{r}
+county <- dat %>% 
+  filter(group == "county" | group == "all_data") %>%
+  mutate(
+    county = if_else(group == "all_data", "All", county),
+    n_percent = round(n * 100 / max(n), digits = 1)
+  ) %>% 
+  select(-c(depth, month, group))
+```
+
+## County
+
+::: panel-tabset
+
+### Figure 1
+```{r}
+#| fig-height: 8
+#| fig-cap: The number of salinity observations in each county.
+#| fig-cap-location: top
+
+p <- county  %>% 
+  filter(county != "All") %>% 
+  plot_n_obs_county()
+
+ggplotly(p)
+```
+
+### Figure 2
+```{r}
+#| fig-height: 8
+#| fig-cap: The mean and standard deviation of salinity in each county.
+#| fig-cap-location: top
+
+p <- plot_mean_sd_county(county)
+
+ggplotly(p, tooltip = "text")
+```
+
+### Table 1
+```{r}
+#| fig-cap: Summary statistics of salinity observations - total and by county.
+#| fig-cap-location: top
+
+county %>% 
+  select(county, n, mean, stdev) %>% 
+  mutate(user_min = mean - 3 * stdev, user_max = mean + 3 * stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+:::
+
+- Inverness has the most observations because the sampling interval was 2 minutes. The sampling rate for other stations was typically 10 minutes.
+- Substantial decrease in standard deviation for Digby, Guysborough, and Yarmouth compared to preliminary QC data.
+
+## Depth
+```{r}
+depth <- dat %>% 
+  filter(group == "all_depth", variable == "Salinity") %>% 
+  mutate(n_percent = round(n * 100 / sum(n), digits = 1)) %>% 
+  select(-c(month, group, station, units, county))
+```
+
+::: panel-tabset
+
+### Figure 3
+```{r}
+#| fig-height: 10
+#| fig-cap: Number of salinity observations at each depth.
+#| fig-cap-location: top
+
+p <- plot_n_obs_depth(depth, facet_county = FALSE)
+
+ggplotly(p, tooltip = "text")
+```
+
+### Figure 4
+```{r}
+#| fig-height: 10
+#| fig-cap: Mean and standard deviation of salinity at each depth.
+#| fig-cap-location: top
+
+p <- plot_mean_sd_depth(depth, facet_county = FALSE, text_size = 12)
+
+ggplotly(p, tooltip = "text")
+```
+:::
+
+- Observations at 10 m are from Inverness county, in Whycocomagh Basin (brackish).
+
+## County + Depth
+
+```{r}
+county_depth <- dat %>% 
+  filter(group == "county_depth") 
+```
+
+::: panel-tabset
+
+### Figure 5
+```{r}
+#| fig.height: 8
+#| fig-cap: Depths with salinity measurements by county.
+#| fig-cap-location: top
+
+p <- ggplot(county_depth, aes(depth, county, col = factor(depth))) +
+  geom_point(size = 4) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Sensor Depth Below the Surface at Low Tide (m)") +
+  scale_color_discrete("depth")
+
+ggplotly(p)
+```
+
+### Figure 6
+```{r}
+#| fig-height: 10
+#| fig-cap: The number of salinity obervations at each depth for each county.
+#| fig-cap-location: top
+
+p <- plot_n_obs_depth(county_depth) +
+  theme_facet_plotly
+
+ggplotly(p)
+
+```
+
+### Figure 7
+```{r}
+#| fig-height: 10
+#| fig-cap: Average salinity and standard deviation for each county at each measured depth. 
+p <- plot_mean_sd_depth(county_depth, text_size = 12) +
+  theme_facet_plotly
+
+ggplotly(p, tooltip = "text")
+```
+
+### Figure 8
+```{r}
+#| fig-height: 8
+#| fig-cap: Average salinity and standard deviation of all observations (grey) and average salinity at each depth.
+
+p <- county %>% 
+  filter(county != "All") %>% 
+  ggplot(aes(mean, county)) +
+  geom_errorbar(
+    aes(xmin = mean - stdev, xmax = mean + stdev), 
+    width = 0, linewidth = 1, col = "grey70"
+  ) +
+  geom_point(size = 5, pch = 21, fill = "grey70", col = "grey50") +
+  geom_point(
+    data = county_depth, 
+    aes(mean, county, col = factor(depth)), 
+    alpha = 0.75, size = 2
+  ) +
+  scale_y_discrete(name = "", limits = rev) +
+  scale_x_continuous("Salinity (PSU)")
+
+ggplotly(p)
+```
+:::
+
+
+## Month
+```{r}
+month <- dat %>% 
+  filter(group == "all_month") %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE)
+  ) 
+```
+
+::: panel-tabset
+
+### Figure 9
+```{r}
+#| fig-height: 8
+#| fig-cap: The number of salinity observations in each month. 
+
+p <- plot_n_obs_month(month, facet_county = FALSE)
+
+ggplotly(p)
+```
+
+### Figure 10
+```{r}
+#| fig-height: 8
+#| fig-cap: Monthly mean and standard deviation.
+
+p <- plot_mean_sd_season(month, facet_county = FALSE)
+
+ggplotly(p)
+
+```
+
+### Table 2
+```{r}
+#| fig-cap: Summary statistics of salinity observations.
+#| fig-cap-location: top
+
+month %>% 
+  select(month, n, mean, stdev) %>% 
+  mutate(season_min = mean - 3 * stdev, season_max = mean + 3 * stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+:::
+
+- The most observations are in September, October, and November because this is when the sensors were deployed in Inverness (recorded every 2 minutes).
+
+## Month + Year 
+
+```{r}
+month_year <- dat %>% 
+  filter(group == "all_month_year") %>%
+  group_by(year) %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE)
+  ) %>% 
+  ungroup() %>% 
+  select(-group)
+
+```
+
+::: panel-tabset
+
+### Figure 11
+```{r}
+#| fig-height: 10
+#| fig-cap: The number of salinity observations for each month by year.
+#| fig-cap-location: top
+
+p <- plot_n_obs_month(month_year, text_size = 12) +
+  facet_wrap(~year) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 12
+```{r}
+#| fig-height: 10
+#| fig-cap: Monthly climatology by year.
+
+p <- plot_mean_sd_season(month_year) +
+  facet_wrap(~year) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 13
+```{r}
+#| fig-height: 8
+#| fig-cap: Monthly climatology by year - interactive.
+#| fig-cap-location: top
+
+month_year <- month_year %>% 
+  mutate(year = factor(year))
+
+p <- plot_mean_sd_season_ribbon(
+  month_year, group = "year", facet_county = FALSE
+)
+
+ggplotly(p, tooltip = "text")
+
+```
+
+### Table 3
+```{r}
+month_year %>% 
+  select(year, month, n, mean, stdev) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+:::
+
+- Drop in Fall 2020 is from the sensors deployed in Inverness (brackish water).
+
+
+## Month + County
+```{r}
+month_county <- dat %>% 
+  filter(group == "county_month", variable == "Salinity") %>% 
+  mutate(month = month(month, label = TRUE)) 
+```
+
+::: panel-tabset
+
+### Figure 14
+```{r}
+#| fig-height: 12
+#| fig-cap: The number of salinity observations in each month for each county.
+#| fig-cap-location: top
+
+p <- plot_n_obs_month(month_county, text_size = 12) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 15
+```{r}
+#| fig-height: 10
+#| fig-cap: The mean and standard deviation of salinity in each county.
+#| fig-cap-location: top
+
+p <- plot_mean_sd_season(month_county) +
+  theme(panel.spacing.y = unit(15, "lines"))
+
+ggplotly(p)
+```
+
+### Figure 16
+```{r}
+#| fig-height: 8
+#| fig-cap: The mean and standard deviation of salinity in each county.
+#| fig-cap-location: top
+
+p <- plot_mean_sd_season_ribbon(
+  month_county, facet_county = FALSE, group = "county", text_size = 12
+)
+
+ggplotly(p, tooltip = "text")
+
+```
+:::
+
+- Antigonish is the only county with salinity observations for all 12 months.
+
+## Month + County + Year
+```{r}
+county_month_year <- dat %>% 
+  filter(group == "county_month_year", variable == "Salinity") %>% 
+  group_by(year, month) %>% 
+  mutate(
+    n_percent = round(n * 100 / sum(n), digits = 1),
+    month = month(month, label = TRUE),
+    variable = "Salinity", 
+    year = factor(year)
+  ) %>% 
+  select(-c(units, group, station, depth)) %>% 
+  ungroup()
+```
+
+### Number of Obervations
+
+Note: x-axis is not consistent between figures.
+
+Figures are not interactive.
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+counties <- unique(county_month_year$county)
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- county_month_year %>% filter(county == county_i)
+  
+  # height of figure j
+  n_years <- length(unique(dat_i$year))
+  if(n_years <= 3) h = 4
+  if(n_years > 3) h = 8
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_n_obs_month(dat_i, text_size = 12) +
+    facet_wrap(~year, ncol = 3) 
+  
+  subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+### Climatology
+
+Figures are not interactive.
+
+::: panel-tabset
+
+```{r}
+#| fig-height: 6
+#| results: "asis"
+
+n_years <- length(unique(county_month_year$year))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  
+  dat_i <- county_month_year %>% 
+    filter(county == county_i)
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_mean_sd_season_ribbon(
+    dat_i, group = "year",
+    n_group = n_years,
+    facet_county = FALSE, y_limits = c(0, 35)
+  )
+
+  print(p)
+}
+  
+```
+
+:::
+
+
+# Recommendations for Additional QC
+
+- Consider whether sensors in the Bras D'Or Lakes should have separate thresholds because it is a brackish waterbody.
+
+
+
