@@ -9,6 +9,7 @@ library(rmarkdown)
 library(stringr)
 library(tidyr)
 
+# **these are old. Update if re-running
 thresh <- c(0.51, 0.71,	0.86,	1.11, 1.38) # #q90, q95, q97, q99, q99.7 of filtered data
 
 thresh <- 0.51

@@ -36,7 +36,8 @@ dt_options <- list(
 
 # summarized data 
 dat <- read_csv(
-  here("data/3_summary_filtered_data_shallow.csv"), show_col_types = FALSE
+  here("data/3_summary_filtered_data_shallow_do_percent_sat.csv"),
+  show_col_types = FALSE
 ) %>% 
   filter(variable == "Dissolved Oxygen", units == "percent saturation")
 
