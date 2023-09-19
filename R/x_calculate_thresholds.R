@@ -1,9 +1,11 @@
-# August 30, 2023
+# September 18, 2023
 
 # This script calculates and exports gross range, climatology, and
 # rolling sd thresholds for:
 ## dissolved_oxygen_mg_per_l
 ## dissolved_oxygen_percent_saturation
+## salinity_psu
+## sensor_depth_measured_m
 ## temperature_degree_c
 
 # Thresholds are calculated from historical data
@@ -12,6 +14,8 @@
 # These datasets have been separated by variable:
 ## do_mg_per_l_rolling_sd_prelim_qc.rds
 ## do_rolling_sd_prelim_qc.rds
+## sal_rolling_sd_prelim_qc.rds.
+## depth_rolling_sd_reprocessed.rds (no prelim_qc depth data because it was not extracted before 2022)
 ## temp_rolling_sd_prelim_qc.rds.
 
 # These data files include the measured observations *and* the associated
@@ -26,6 +30,8 @@
 # To regenerate the data files, see
 ## dissolved_oxygen_mg_per_l/3.0_export_do_mg_per_l_rolling_sd_prelim_qc.R
 ## dissolved_oxygen_percent_saturation/3.0_export_do_rolling_sd_prelim_qc.R
+## salinity_psu/3.0_export_sal_rolling_sd_prelim_qc.R
+## sensor_depth_measured_m/3.0_export_depth_rolling_sd_reprocessed.R
 ## temperature_degree_c/3.0_export_temp_rolling_sd_prelim_qc.R
 
 # Dissolved oxygen thresholds are based on pooled data (not by county).
@@ -71,18 +77,19 @@ dat_do_mg_per_l <- readRDS(here("data/do_mg_per_l_rolling_sd_prelim_qc.rds")) %>
 
 # climatology thresholds
 climatology_do_mg_per_l <- qc_calculate_climatology_thresholds(
-  dat_do_mg_per_l, var = value_dissolved_oxygen_uncorrected_mg_per_l
+  dat_do_mg_per_l, var = dissolved_oxygen_uncorrected_mg_per_l
 )
 
 # gross range user thresholds
 user_do_mg_per_l <- qc_calculate_user_thresholds(
-  dat_do_mg_per_l, var = value_dissolved_oxygen_uncorrected_mg_per_l
+  dat_do_mg_per_l, var = dissolved_oxygen_uncorrected_mg_per_l
 )
 
 # rolling standard deviation thresholds (NAs are removed in the function)
 rolling_sd_do_mg_per_l <- qc_calculate_rolling_sd_thresholds(
   dat_do_mg_per_l,
-  var = value_dissolved_oxygen_uncorrected_mg_per_l, prob = 0.95
+  stat = "quartile",
+  var = dissolved_oxygen_uncorrected_mg_per_l, prob = 0.95
 )
 
 
@@ -94,6 +101,7 @@ dat_do <- readRDS(here("data/do_rolling_sd_prelim_qc.rds")) %>%
   select(
     -c(int_sample, n_sample, rolling_sd_flag_dissolved_oxygen_percent_saturation)
   ) %>%
+  rename(dissolved_oxygen_percent_saturation = value_dissolved_oxygen_percent_saturation)
   mutate(month = month(timestamp_utc)) %>%
   filter(
     !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
@@ -103,20 +111,121 @@ dat_do <- readRDS(here("data/do_rolling_sd_prelim_qc.rds")) %>%
 
 # climatology thresholds
 climatology_do <- qc_calculate_climatology_thresholds(
-  dat_do, var = value_dissolved_oxygen_percent_saturation
+  dat_do, var = dissolved_oxygen_percent_saturation
 )
 
 # gross range user thresholds
 user_do <- qc_calculate_user_thresholds(
-  dat_do, var = value_dissolved_oxygen_percent_saturation
+  dat_do, var = dissolved_oxygen_percent_saturation
 )
 
 # rolling standard deviation thresholds
 rolling_sd_do <- qc_calculate_rolling_sd_thresholds(
-  dat_do, var = value_dissolved_oxygen_percent_saturation, prob = 0.95
+  dat_do, stat = "quartile", prob = 0.95,
+  var = dissolved_oxygen_percent_saturation,
 )
 
-# temperature (group by county) -------------------------------------------------------------
+
+# Salinity (Inverness is separate) ----------------------------------------
+dat_sal <- readRDS(here("data/sal_rolling_sd_prelim_qc.rds")) %>%
+  select(-c(sensor_type, int_sample, n_sample, rolling_sd_flag_salinity_psu)) %>%
+  ss_pivot_longer() %>%
+  select(
+    COUNTY = county,
+    STATION = station,
+    DEPLOYMENT_PERIOD = deployment_range,
+    TIMESTAMP = timestamp_utc,
+    everything()) %>%
+  mutate(VARIABLE = "Salinity", UNITS = "PSU") %>%
+  filter_out_suspect_obs() %>%
+  select(-c(VARIABLE, UNITS)) %>%
+  rename(
+    county = COUNTY,
+    station = STATION,
+    deployment_range = DEPLOYMENT_PERIOD,
+    timestamp_utc = TIMESTAMP
+  ) %>%
+  ss_pivot_wider() %>%
+  mutate(county_sal = if_else(county == "Inverness", "Inverness", NA_character_))
+
+# climatology thresholds - not enough data to calculate
+climatology_sal <- expand.grid(
+  month = 1:12,
+  county = c("Inverness",  NA_character_),
+  threshold = c("season_min", "season_max")) %>%
+  mutate(
+    qc_test = "climatology",
+    variable = "salinity_psu",
+    threshold_value = NA
+  )
+
+# gross range user thresholds
+user_sal <- dat_sal %>%
+  group_by(county_sal) %>%
+  qc_calculate_user_thresholds(var = salinity_psu) %>%
+  ungroup() %>%
+  rename(county = county_sal)
+
+# rolling standard deviation thresholds
+rolling_sd_sal <- dat_sal %>%
+  group_by(county_sal) %>%
+  qc_calculate_rolling_sd_thresholds(
+    var = salinity_psu, stat = "quartile", prob = 0.95) %>%
+  ungroup() %>%
+  rename(county = county_sal)
+
+# Sensor Depth (group by county) ------------------------------------------
+
+dat_depth <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>%
+  select(-c(sensor_type, int_sample, n_sample,
+            rolling_sd_flag_sensor_depth_measured_m)) %>%
+  ss_pivot_longer() %>%
+  filter(
+    # measured outside of gross range
+    !(station == "Olding Island" &
+        deployment_range == "2022-Jun-03 to 2022-Sep-30" &
+        depth_log  == 3),
+    # freshwater stations
+    !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    # suspect range
+    !(station == "Long Beach" &
+        deployment_range == "2020-Jul-16 to 2020-Nov-29" & depth_log == 5),
+    !(station == "Sandy Cove" &
+        deployment_range == "2020-Jul-16 to 2020-Nov-30" & depth_log == 5),
+    !(station == "Tickle Island 1" &
+        deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5)
+    )
+
+
+# depth depends on where sensor is on string, not historical data
+user_depth <- expand.grid(
+  county = c(unique(dat_depth$county)),
+  threshold = c("user_min", "user_max")) %>%
+  mutate(
+    qc_test = "grossrange",
+    variable = "sensor_depth_measured_m",
+    threshold_value = NA
+  )
+
+# no monthly climatology cycle
+climatology_depth <- expand.grid(
+  month = 1:12,
+  county = c(unique(dat_depth$county)),
+  threshold = c("season_min", "season_max")) %>%
+  mutate(
+    qc_test = "climatology",
+    variable = "sensor_depth_measured_m",
+    threshold_value = NA
+  )
+
+# rolling standard deviation thresholds
+rolling_sd_depth <- dat_depth %>%
+  group_by(county) %>%
+  qc_calculate_rolling_sd_thresholds(
+    var = sensor_depth_measured, stat = "mean_sd", n_sd = 3) %>%
+  ungroup()
+
+# Temperature (group by county) -------------------------------------------------------------
 
 dat_temp <- readRDS(here("data/temp_rolling_sd_prelim_qc.rds")) %>%
   select(
@@ -130,9 +239,8 @@ dat_temp <- readRDS(here("data/temp_rolling_sd_prelim_qc.rds")) %>%
 
 # climatology thresholds
 climatology_temp <- dat_temp %>%
-  qc_calculate_climatology_thresholds(
-    # grouped by county here
-    var = value_temperature_degree_c, county) %>%
+  # grouped by county here
+  qc_calculate_climatology_thresholds(var = value_temperature_degree_c, county) %>%
   ungroup()
 
 # gross range user thresholds
@@ -145,19 +253,23 @@ user_temp <- dat_temp %>%
 rolling_sd_temp <- dat_temp %>%
   group_by(county) %>%
   qc_calculate_rolling_sd_thresholds(
-    var = value_temperature_degree_c, prob = 0.997) %>%
+    var = value_temperature_degree_c, stat = "quartile", prob = 0.997) %>%
   ungroup()
+
+
 
 # export ------------------------------------------------------------------
 
 thresholds_out <- bind_rows(
   climatology_do_mg_per_l, user_do_mg_per_l, rolling_sd_do_mg_per_l,
   climatology_do, user_do, rolling_sd_do,
+  climatology_sal, user_sal, rolling_sd_sal,
+  climatology_depth, user_depth, rolling_sd_depth,
   climatology_temp, user_temp, rolling_sd_temp
 ) %>%
   select(qc_test, variable, county, month, threshold, threshold_value)
 
-fwrite(thresholds_out, file = here("output/5_thresholds.csv"))
+fwrite(thresholds_out, file = here("output/5_thresholds.csv"), na = "NA")
 
 
 
