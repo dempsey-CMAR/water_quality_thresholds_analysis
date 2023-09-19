@@ -449,9 +449,7 @@ for(i in seq_along(counties)){
 - Check how many deployments (what proportion) had depth sensors.   
   - How many deployments had more than one depth sensor?
 - Compare minimum measured depth to recorded depth.
-- Use the estimated depth to inform threshold(s).
-  - And range of the measured depth.
-  - Look at the range of measured depth by county.
+- Look at the range of measured depth by county.
 
 
 

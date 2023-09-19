@@ -45,18 +45,19 @@ theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 
 # EXPLORATORY ANALYSIS: SENSOR DEPTH
 
-September 12, 2023
-
-- Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
-  - Freshwater Stations removed
-    - Not expected to have distinct tidal signal
-  - Olding Island 2022-06-03 sensor at 3 m did not record properly and was removed.
-  - Long Beach and Sandy Cove (2020-Jul-16) 2 m data was removed because of very high tidal range relative to other deployments in the area.
-      - Likely that the strings were pushed over with the tide.
-  - Tickle Island (2020-Oct-21) 5m data removed because of very high tidal range relative to other deployments in the area.
-    - Potential biofouling weighing down the string.
+September 18, 2023
 
 - The estimated sensor depth was NOT rounded. 
+
+- Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
+   - Freshwater stations not expected to have distinct tidal signal
+    - Hourglass Lake, Piper Lake
+  - Measured outside gross range
+    - Olding Island, 2022-06-03, 3 m
+  - Suspect range compared to other deployments in the area; likely the strings were pushed over by the tide and / or weighed down by biofouling.
+    - Long Beach 2020-07-16, 5 m
+    - Sandy Cove 2020-07-16, 5 m
+    - Tickle Island 1 2020-10-21, 5 m 
  
 ## Station Locations
 
@@ -451,7 +452,8 @@ for(i in seq_along(counties)){
 
 # Recommendations for Additional QC
 
-
+- Don't apply user or climatology thresholds to measured sensor depth data.
+  - Depth depends on where the sensor was on the string, not the county or the season.
 
 
 

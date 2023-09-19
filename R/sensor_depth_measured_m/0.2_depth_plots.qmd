@@ -58,11 +58,12 @@ dat_all <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>%
 
 # Measured Sensor Depth: Station Plots
 
-DRAFT September 11, 2023
+September 18, 2023
 
 - This data is from the reprocessed Coastal Monitoring Program data.
  - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
  - No preliminary QC was applied to this data. 
+  - Exception: Olding Island 2022-06-03 measured outside of the sensor gross range and was not plotted here.
 
 ::: panel-tabset
 
@@ -108,7 +109,6 @@ for(i in seq_along(counties)) {
       geom_point() +
       scale_colour_manual(values = depth_pal) +
       geom_vline(xintercept = depl_start, linetype = "dashed") +
-      #geom_line(linewidth = 0.25) +
       theme(legend.position = "none") + 
       facet_wrap(~depth_log, ncol = 1)
     
@@ -123,6 +123,10 @@ for(i in seq_along(counties)) {
 # Notes
 
 - VR2 sensors do not record decimal places.
+  - Depth range must be consistently >= 2 m to start to pick up tidal cycle (e.g., will record 1 m, 2 m, 3 m)
+    - Cornwallis, Fisherman's Island
+  - Depth range < 2 m will only show ~ mid tide and the high OR low tide
+    - Moose Point, Tanner Island
 - Digby
   - Hourglass Lake sensor malfunctioned
   - Long Beach and Sandy Cove 5 m sensors likely pulled by tide (very large range)

@@ -46,6 +46,9 @@ dat_all <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>%
        rolling_sd_flag_sensor_depth_measured_m)) %>% 
   na.omit() %>% 
   ss_pivot_longer() %>%
+  filter(!(station == "Olding Island" &
+             deployment_range == "2022-Jun-03 to 2022-Sep-30" &
+             depth_log == 3)) %>% 
   mutate(
     depth = factor(depth_log),
     year = year(timestamp_utc),
@@ -80,7 +83,7 @@ theme_facet_plotly <- theme(
 
 # Measured Sensor Depth: Rolling Standard Deviation Distribution
 
-September 12, 2023
+September 18, 2023
 
 - This data is from the reprocessed Coastal Monitoring Program data.
  - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
@@ -89,12 +92,14 @@ September 12, 2023
   - Olding Island 2022-06-03 (3 m ) was removed due to obvious outliers. 
  
 - Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
-  - Freshwater Stations not considered
-    - Not expected to have distinct tidal signal
-  - Long Beach and Sandy Cove (2020-Jul-16) 5 m data was removed because of very high depth range relative to other deployments in the area.
-      - Likely that the strings were pushed over with the tide.
-  - Tickle Island (2020-Oct-21) 5 m data removed because of very high depth range relative to other deployments in the area.
-    - Potential biofouling weighing down the string.
+   - Freshwater stations not expected to have distinct tidal signal
+    - Hourglass Lake, Piper Lake
+  - Measured outside gross range
+    - Olding Island, 2022-06-03, 3 m
+  - Suspect range compared to other deployments in the area; likely the strings were pushed over by the tide and / or weighed down by biofouling.
+    - Long Beach 2020-07-16, 5 m
+    - Sandy Cove 2020-07-16, 5 m
+    - Tickle Island 1 2020-10-21, 5 m 
 
 ## Preliminary QC
 
@@ -192,9 +197,10 @@ ggplotly(p)
 ```
 :::
 
-- Most sd_roll observations from Annapolis and Digby (and some Yarmouth) are > 1 (ie., in the tail of the Figure 1).
+- Annapolis and Digby (and some Yarmouth)
+  - Most sd_roll observations from  are > 1 (ie., in the tail of the Figure 1)
 - Guysborough
-  - Most of the sd_roll > 1 are from The Bull, which shows signal from Hurricane Teddy.
+  - Most of the sd_roll > 1 are from The Bull, which shows signal from Hurricane Teddy
 - Halifax
   - All sd_roll > 1 are from Shut-In Island (1 observation from Borgles Island)
 
@@ -364,6 +370,7 @@ ggplotly(p)
 
 
 #### Table 2
+
 Deployments with sd_roll > 1
 ```{r}
 #| message: false
@@ -431,11 +438,14 @@ ggplotly(p)
 ```
 :::
 
-- Most sd_roll observations from Annapolis and Digby (and some Yarmouth) are > 1 (ie., in the tail of the Figure 1).
+- Annapolis and Digby (and some Yarmouth)
+  - Most sd_roll observations from  are > 1 (ie., in the tail of the Figure 1).
 - Guysborough
-  - Most of the sd_roll > 1 are from The Bull, which shows signal from Hurricane Teddy.
+  - Most of the sd_roll > 1 are from The Bull, which shows signal from Hurricane Teddy
 - Halifax
   - All sd_roll > 1 are from Shut-In Island (1 observation from Borgles Island)
+- Most counties are relatively normally distributed
+  - Main exception: Antigonish is right-skewed
 
 #### County + Month + Year
 
@@ -540,10 +550,11 @@ p <- stats_filt %>%
 ggplotly(p)
 ```
 
-#### Table 1: Summary statistics
+#### Table 3: Summary statistics
 ```{r}
 stats_filt %>% 
-  select(-c(variable, max, contains("thresh"))) %>% 
+  mutate(mean_3sd = mean + 3 * stdev) %>% 
+  select(mean, med, stdev, mean_3sd, q_90, q_95, q_997) %>% 
   datatable(
     options = list(
       dom = 'ft',
@@ -561,7 +572,24 @@ stats_filt %>%
   - Although Shelburne, Colchester, Lunenburg, Halifax. Queens, Richmond, and Guysborough are very similar.
 - Most counties are normally distributed.
   - Main exception: Antigonish
+- Limited difference between upper quartile values for each county.
+  - Consider using mean +/- 3 sd instead of quartiles for stdev_max.
 - What is causing the long tails for Guysborough and Halifax?
-- What is causing the 0's for Pictou?
-- Consider using mean +/- 3 sd, and NOT quartiles for depth.
-  
+  - Guysborough: The Bull
+- What is causing the 0's for Antigonish and Pictou?
+  - The depth range for these stations is ~ 1 - 2 m. Because the VR2 unit does not record decimals, there are many measured depths with the same value, resulting in very small or 0 standard deviation.
+    - See below and depth_plots.html
+
+### Figure 17: Southside, Antigonish  
+```{r}
+#| fig-height: 2.75
+
+dat_filt %>% 
+  rename(sensor_depth_at_low_tide_m = depth_log) %>% 
+  mutate(sensor_type = "") %>% 
+  ss_pivot_wider() %>% 
+  filter(station == "Southside") %>% 
+  ss_ggplot_variables()
+
+```
+

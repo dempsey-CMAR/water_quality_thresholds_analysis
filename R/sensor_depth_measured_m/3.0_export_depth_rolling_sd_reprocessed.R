@@ -22,7 +22,7 @@ dat_raw <- list.files(
     -contains("salinity")
   ) %>%
   filter(!is.na(sensor_depth_measured_m)) %>%
-  rename(depth_log = sensor_depth_at_low_tide_m) %>%
+  rename(depth_log = sensor_depth_at_low_tide_m) #%>%
   filter(
     # did not record
     !(station == "Olding Island" &

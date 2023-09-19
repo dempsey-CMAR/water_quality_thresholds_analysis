@@ -51,15 +51,16 @@ dat_all <- list.files(
     -contains("temperature"), -contains("dissolved_oxygen"),
     -contains("salinity")
   ) %>%
+  rename(depth_log = sensor_depth_at_low_tide_m) %>% 
   filter(
     !is.na(sensor_depth_measured_m),
     !(station == "Olding Island" &
         deployment_range == "2022-Jun-03 to 2022-Sep-30" & 
-        sensor_depth_at_low_tide_m == 3)
+        depth_log == 3)
   ) %>% 
   ss_pivot_longer() %>%
   mutate(
-    depth_log = factor(sensor_depth_at_low_tide_m),
+    depth_log = factor(depth_log),
     year = year(timestamp_utc),
     year = factor(year),
     month = month(timestamp_utc)
@@ -79,6 +80,14 @@ dat_filt <- dat_all %>%
         deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5)
   ) 
 
+# dat_filt2 <- dat_filt %>% 
+#   filter(value < 60) %>% 
+#   summarise(
+#     mean = mean(value),
+#     sd = sd(value)
+#   ) %>% 
+#   mutate(user_min = mean - 3*sd, user_max = mean + 3 * sd)
+
 county_pal <- get_county_colour_palette(length(unique(dat_all$county)))
 depth_pal <- viridis(length(unique(dat_all$depth_log)), direction = -1)
 year_pal <- viridis(length(unique(dat_all$year)), option = "C")
@@ -92,7 +101,7 @@ theme_facet_plotly <- theme(
 
 # Measured Depth Distribution
 
-September 12, 2023
+September 18, 2023
 
 - This data is from the reprocessed Coastal Monitoring Program data.
  - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
@@ -101,12 +110,14 @@ September 12, 2023
   - Olding Island 2022-06-03 (3 m ) was removed due to obvious outliers. 
  
 - Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
-  - Freshwater Stations not considered
-    - Not expected to have distinct tidal signal
-  - Long Beach and Sandy Cove (2020-Jul-16) 5 m data was removed because of very high depth range relative to other deployments in the area.
-      - Likely that the strings were pushed over with the tide.
-  - Tickle Island (2020-Oct-21) 5 m data removed because of very high depth range relative to other deployments in the area.
-    - Potential biofouling weighing down the string.
+   - Freshwater stations not expected to have distinct tidal signal
+    - Hourglass Lake, Piper Lake
+  - Measured outside gross range
+    - Olding Island, 2022-06-03, 3 m
+  - Suspect range compared to other deployments in the area; likely the strings were pushed over by the tide and / or weighed down by biofouling.
+    - Long Beach 2020-07-16, 5 m
+    - Sandy Cove 2020-07-16, 5 m
+    - Tickle Island 1 2020-10-21, 5 m 
 
 ## Preliminary QC
 
@@ -406,7 +417,7 @@ for(i in seq_along(counties)){
 
 # Recommendations
 
-- User thresholds based on historical data would not be useful at the county or station level because the measured depth depends mainly on where the sensor is placed on the string.
+- User thresholds based on historical data would not be useful at the county or station level because the measured depth depends on where the sensor is placed on the string.
   - Although some counties typically have more shallow or more deep sensors.
 - Measured sensor depth is not normally distributed for most counties.
 - Digby, Lunenburg, Richmond: 3 distinct depths measured.

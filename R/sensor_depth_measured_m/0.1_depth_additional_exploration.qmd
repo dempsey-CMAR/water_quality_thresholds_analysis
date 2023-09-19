@@ -49,8 +49,8 @@ dat_raw <- list.files(
 dat <- dat_raw %>%   
   filter(!is.na(sensor_depth_measured_m)) %>%
   ss_pivot_longer() %>%
-  rename(depth_log = sensor_depth_at_low_tide_m) %>%
-  filter(variable == "sensor_depth_measured_m")
+  filter(variable == "sensor_depth_measured_m") %>% 
+  rename(depth_log = sensor_depth_at_low_tide_m)
 
 county_pal <- get_county_colour_palette(length(unique(dat$county)))
 theme_facet_plotly <- theme(panel.spacing.y = unit(25, "lines"))
@@ -58,7 +58,7 @@ theme_facet_plotly <- theme(panel.spacing.y = unit(25, "lines"))
 
 # EXPLORATORY ANALYSIS: SENSOR DEPTH
 
-September 12, 2023
+September 18, 2023
 
 - This data is from the reprocessed Coastal Monitoring Program data.
  - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
@@ -108,7 +108,8 @@ depls %>%
 
 ### Table 2
 
-Sensors that measure depth.
+- `r nrow(depls %>% filter(sensor_type == "aquameasure") %>% distinct(sensor_serial_number))` different aquameasure sensors measured depth.
+- `r nrow(depls %>% filter(sensor_type == "vr2ar") %>% distinct(sensor_serial_number))` different vemco sensors measured depth.
 
 ```{r}
 depls %>% 
@@ -149,13 +150,14 @@ for(i in 1:nrow(depl_fresh)){
 
       p <- ggplot(
         dat_i,
-        aes(timestamp_utc, value, colour = factor(depth_log))
+        aes(timestamp_utc, value, 
+            colour = factor(depth_log))
       ) +
         geom_point() +
         scale_y_continuous("Measured Sensor Depth (m)") +
         scale_x_datetime("Date") +
         scale_colour_viridis_d(direction = -1) +
-        facet_wrap(~depth_log, ncol = 1) +
+        facet_wrap(~ depth_log, ncol = 1) +
         theme_light() +
         theme(
           legend.position = "none",
@@ -168,9 +170,9 @@ for(i in 1:nrow(depl_fresh)){
 ```
 :::
 
-- Looks like Hourglass Lake sensor malfunctioned.
+- Hourglass Lake sensor malfunctioned.
 - What causes the changes in depth for Piper Lake?
-  - Spring melt?
+  - Spring melt
 
 ## Configuration
 
@@ -204,13 +206,14 @@ for(i in 1:nrow(depl_fixed)){
 
       p <- ggplot(
         dat_i,
-        aes(timestamp_utc, value, colour = factor(depth_log))
+        aes(timestamp_utc, value, 
+            colour = factor( depth_log))
       ) +
         geom_point() +
         scale_y_continuous("Measured Sensor Depth (m)") +
         scale_x_datetime("Date") +
         scale_colour_viridis_d(direction = -1) +
-        facet_wrap(~depth_log, ncol = 1) +
+        facet_wrap(~ depth_log, ncol = 1) +
         theme_light() +
         theme(
           legend.position = "none",
@@ -254,13 +257,14 @@ for(i in 1:nrow(depl_surface)){
 
       p <- ggplot(
         dat_i,
-        aes(timestamp_utc, value, colour = factor(depth_log))
+        aes(timestamp_utc, value, 
+            colour = factor( depth_log))
       ) +
         geom_point() +
         scale_y_continuous("Measured Sensor Depth (m)") +
         scale_x_datetime("Date") +
         scale_colour_viridis_d(direction = -1) +
-        facet_wrap(~depth_log, ncol = 1) +
+        facet_wrap(~ depth_log, ncol = 1) +
         theme_light() +
         theme(
           legend.position = "none",
@@ -289,7 +293,8 @@ for(i in 1:nrow(depl_surface)){
 #| fig-height: 8
 p <- dat %>% 
   filter(county == "Pictou") %>% 
-  ggplot(aes(timestamp_utc, value, col = factor(depth_log))) +
+  ggplot(aes(timestamp_utc, value, 
+             col = factor( depth_log))) +
   geom_point() +
   scale_colour_viridis_d(direction = -1) +
   facet_wrap(~station, ncol = 1)
@@ -313,11 +318,11 @@ dat_filt <- dat %>%
      !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
      !(station == "Olding Island" & 
          deployment_range == "2022-Jun-03 to 2022-Sep-30" &
-         sensor_depth_at_low_tide_m == 3)
+         depth_log == 3)
    )
 
 depth_stats <- dat_filt %>% 
-  group_by(county, station, deployment_range, string_configuration, depth_log) %>% 
+  group_by(county, station, deployment_range, string_configuration,  depth_log) %>% 
   summarise(
     min = min(value),
     max = max(value),
@@ -325,7 +330,7 @@ depth_stats <- dat_filt %>%
     range = max - min
   ) %>% 
   mutate(
-    diff = depth_log - min,
+    diff =  depth_log - min,
     across(where(is.numeric), round, digits = 2)) %>% 
   ungroup()
 ```
@@ -334,7 +339,7 @@ depth_stats <- dat_filt %>%
 - Filter out freshwater stations.
 - Filter out Olding Island 2022-Jun-03 (3 m).
 - Number of deployments with at least one depth sensor: `r nrow(dat_filt %>% distinct(county, station, deployment_range))` 
-- Number of deployments with 2 depth sensors: `r nrow(dat_filt %>% distinct(county, station, deployment_range, depth_log)  %>%  group_by(county, station, deployment_range) %>%  mutate(n = n()) %>% filter(n > 1) %>%  distinct(county, station, deployment_range))`
+- Number of deployments with 2 depth sensors: `r nrow(dat_filt %>% distinct(county, station, deployment_range,  depth_log)  %>%  group_by(county, station, deployment_range) %>%  mutate(n = n()) %>% filter(n > 1) %>%  distinct(county, station, deployment_range))`
 
 ### Table 2
 ```{r}
@@ -412,13 +417,14 @@ for(i in 1:nrow(large_range)){
 
       p <- ggplot(
         dat_i,
-        aes(timestamp_utc, value, colour = factor(depth_log))
+        aes(timestamp_utc, value, 
+            colour = factor( depth_log))
       ) +
         geom_point() +
         scale_y_continuous("Measured Sensor Depth (m)") +
         scale_x_datetime("Date") +
         scale_colour_viridis_d(direction = -1) +
-        facet_wrap(~depth_log, ncol = 1) +
+        facet_wrap(~ depth_log, ncol = 1) +
         theme_light() +
         theme(
           legend.position = "none",
@@ -466,9 +472,15 @@ for(i in 1:nrow(large_range)){
 ```{r}
 depth_stats <- depth_stats %>% 
   filter(
-    !(station == "Long Beach" & deployment_range == "2020-Jul-16 to 2020-Nov-29" & depth_log == 5),
-    !(station == "Sandy Cove" & deployment_range == "2020-Jul-16 to 2020-Nov-30" & depth_log == 5),
-    !(station == "Tickle Island 1" & deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5)
+    !(station == "Long Beach" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-29" & 
+        depth_log == 5),
+    !(station == "Sandy Cove" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-30" &  
+        depth_log == 5),
+    !(station == "Tickle Island 1" & 
+        deployment_range == "2020-Oct-21 to 2021-Aug-25" &  
+        depth_log == 5)
   )
 
 depth_stats %>% 
@@ -487,9 +499,10 @@ depth_stats %>%
 p <- ggplot(
   depth_stats, 
   aes(
-    depth_log, min, col = factor(depth_log),
+    depth_log, min, 
+    col = factor( depth_log),
     text = paste0(
-      "depth_log: ", depth_log, "\n",
+      " depth_log: ",  depth_log, "\n",
       "min_measured: ", min, "\n",
       "station: ", station, "\n",
       "depl: ", deployment_range))) +
@@ -578,7 +591,8 @@ for(i in 1:nrow(large_diff)){
 
       p <- ggplot(
         dat_i,
-        aes(timestamp_utc, value, colour = factor(depth_log))
+        aes(timestamp_utc, value, 
+            colour = factor( depth_log))
       ) +
         geom_point() +
         scale_y_continuous("Measured Sensor Depth (m)") +
@@ -599,7 +613,8 @@ for(i in 1:nrow(large_diff)){
 
 - Madeline Point 1 2020-Feb-26 was 19 m deeper than recorded in the log.
 - Shut-In Island 2020-Nov-08 moved to a shallower location.
-- Include a flag for estimated depth.
+- It looks like the depth sensors recorded correctly, but the depth recorded in the log was not a good estimate.
+  - Include a flag for estimated depth.
 
 ## Negative Depths
 
@@ -608,10 +623,21 @@ dat_filt %>%
   filter(value < 0) %>% 
   select(county, station, 
          sensor_type, serial_number = sensor_serial_number, 
-         depth_log, depth_measured = value) %>% 
+          depth_log, depth_measured = value) %>% 
   datatable(options = dt_options, rownames = FALSE)
 ```
 
 
+## QC Notes
 
+-  Deployments to filter out of threshold analysis:
+  - Freshwater stations
+    - Hourglass Lake, Piper Lake
+  - Measured outside gross range
+    - Olding Island, 2022-06-03, 3 m
+  - Suspect range
+    - Long Beach 2020-07-16, 5 m
+    - Sandy Cove 2020-07-16, 5 m
+    - Tickle Island 1 2020-10-21, 5 m 
 
+- Include a test for the estimated sensor depth.
