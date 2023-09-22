@@ -1,0 +1,329 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width=8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(purrr)
+library(RColorBrewer)
+library(readr)
+library(sensorstrings)
+library(stringr)
+library(summaryplots)
+library(tidyr)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# all data
+dat <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>% 
+  select(
+    -c(sensor_type, int_sample, n_sample, 
+       rolling_sd_flag_sensor_depth_measured_m)) %>% 
+  ss_pivot_longer() %>%
+  filter(
+    !(station == "Olding Island" &
+        deployment_range == "2022-Jun-03 to 2022-Sep-30" &
+        depth_log == 3),
+    # freshwater stations
+    !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    # suspect range
+    !(station == "Long Beach" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-29" & depth_log == 5),
+    !(station == "Sandy Cove" & 
+        deployment_range == "2020-Jul-16 to 2020-Nov-30" & depth_log == 5),
+    !(station == "Tickle Island 1" & 
+        deployment_range == "2020-Oct-21 to 2021-Aug-25" & depth_log == 5),
+    value >= 0
+  )
+
+depth_stats <- dat %>% 
+  group_by(county, station, deployment_range, sensor_serial_number, depth_log) %>% 
+  summarise(
+    min = min(value),
+    max = max(value),
+    mean = mean(value),
+    range = max - min
+  ) %>% 
+  mutate(
+    diff_min = depth_log - min,
+    abs_diff_min = abs(diff_min),
+    # diff_mean = depth_log - mean,
+    percent_diff_min = 100 * abs_diff_min / depth_log,
+    #percent_diff_mean = 100 * diff_mean / depth_log,
+    across(where(is.numeric), round, digits = 2)) %>% 
+  ungroup()
+
+county_pal <- get_county_colour_palette(length(unique(dat$county)))
+theme_facet_plotly <- theme(panel.spacing.y = unit(25, "lines"))
+```
+
+# EXPLORATORY ANALYSIS: ESTIMATED SENSOR DEPTH
+
+September 19, 2023
+
+- Filtered data
+- Log depth is the estimated sensor depth at low tide.
+- Measured depth is the minimum measured depth measured by the sensor.
+
+## Estimated Depth vs. Measured Depth: Absolute Difference
+
+### Figure 1
+```{r}
+#| fig-height: 6
+
+p <- ggplot(
+  depth_stats, 
+  aes(
+    depth_log, min, 
+    col = factor( depth_log),
+    text = paste0(
+      " depth_log: ",  depth_log, "\n",
+      "min_measured: ", min, "\n",
+      "station: ", station, "\n",
+      "depl: ", deployment_range))) +
+  geom_abline(slope = 1, intercept = 0, col = "grey30") +
+  geom_point() 
+
+ggplotly(p, tooltip = "text")
+```
+
+### Distributions
+
+::: panel-tabset
+#### Figure 2
+```{r}
+p <- plot_histogram(depth_stats, hist_col = diff_min, binwidth = 1) + 
+  scale_x_continuous("depth_log - min_measured")
+
+ggplotly(p)
+```
+
+#### Figure 3
+```{r}
+abs_diff <- depth_stats %>%
+  mutate(abs_diff_min = abs(diff_min))
+    
+p <- plot_histogram(abs_diff, hist_col = abs_diff_min, binwidth = 1) +
+  scale_x_continuous("abs(depth_log - min_measured)")
+
+ggplotly(p)
+```
+
+#### Table 1
+
+```{r}
+
+depth_stats %>% 
+  mutate(
+    difference = case_when(
+    abs_diff_min == 0 ~ "0_exact",
+    abs_diff_min >= 0 & abs_diff_min < 1 ~ "between 0 and 1 m",
+    abs_diff_min >= 1 & abs_diff_min < 2 ~ "between 1 and 2 m",
+    abs_diff_min >= 2 & abs_diff_min < 3 ~ "between 2 and 3 m",
+    abs_diff_min >= 3 & abs_diff_min < 4 ~ "between 3 and 4 m",
+    abs_diff_min >= 4 & abs_diff_min < 5 ~ "between 4 and 5 m",
+    abs_diff_min >= 5 & abs_diff_min < 6 ~ "between 5 and 6 m",
+    abs_diff_min >= 6 & abs_diff_min < 7 ~ "between 6 and 7 m",
+    abs_diff_min >= 7 ~ "greater than 7 m"
+  )
+  ) %>% 
+  group_by(difference) %>% 
+  summarise(`number of deployments` = n()) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+
+```
+
+:::
+
+### Deployments with large difference (>= 5 m)
+
+- Absolute difference between minimum measured depth and estimated depth at low tide.
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+large_diff <- depth_stats %>% 
+  filter(abs_diff_min >= 5)
+
+for(i in 1:nrow(large_diff)){
+  depl_i <- large_diff[i, ]
+
+  cat('\n####', 
+      paste(depl_i$station, 
+            str_split(depl_i$deployment_range, pattern = " to ")[[1]][1]), 
+      '\n')
+
+    dat_i <-  dat %>%
+      filter(
+        station == depl_i$station,
+        deployment_range == depl_i$deployment_range)  
+
+      # height of figure j
+      n_sensor <- length(unique(dat_i$sensor_serial_number))
+
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+
+      p <- ggplot(
+        dat_i,
+        aes(timestamp_utc, value, 
+            colour = factor( depth_log))
+      ) +
+        geom_point() +
+        scale_y_continuous("Measured Sensor Depth (m)") +
+        scale_x_datetime("Date") +
+        scale_colour_viridis_d(direction = -1) +
+        facet_wrap(~depth_log, ncol = 1) +
+        theme_light() +
+        theme(
+          legend.position = "none",
+          strip.text = element_text(colour = "black", size = 10),
+          strip.background = element_rect(fill = "white", colour = "darkgrey")
+        )
+
+       subchunkify(p, fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+## Potential Thresholds
+
+- Filtered out Madeline Point
+
+```{r}
+thresh_abs <- depth_stats %>% 
+  filter(!(station == "Madeline Point" & deployment_range == "2020-Feb-26 to 2020-Oct-20")) %>%
+  summarise(
+    mean = mean(diff_min), sd = sd(diff_min),
+    q_90 = quantile(abs_diff_min, prob = 0.90),
+    q_95 = quantile(abs_diff_min, prob = 0.95),
+    q_997 = quantile(abs_diff_min, prob = 0.997)
+  ) %>% 
+  mutate(
+    mean_sd = mean + 3 * sd,
+    across(where(is.numeric), round, digits = 2)
+  ) %>% 
+  select(-c(mean, sd))
+
+thresh_abs %>% 
+  datatable(options = dt_options, rownames = FALSE)
+ 
+```
+
+
+### Estimated Depth vs. Measured Depth: Percent Difference
+
+### Figure 1
+```{r}
+#| fig-height: 6
+
+p <- ggplot(
+  depth_stats, 
+  aes(
+    depth_log, percent_diff_min, 
+    col = factor( depth_log),
+    text = paste0(
+      " depth_log: ",  depth_log, "\n",
+      "min_measured: ", min, "\n",
+      "station: ", station, "\n",
+      "depl: ", deployment_range))) +
+ # geom_abline(slope = 1, intercept = 0, col = "grey30") +
+  geom_point() 
+
+ggplotly(p, tooltip = "text")
+```
+
+- Mostly shallow sensors with high % difference
+
+### Distributions
+
+::: panel-tabset
+#### Figure 4
+```{r}
+p <- plot_histogram(depth_stats, hist_col = percent_diff_min, binwidth = 5) + 
+  scale_x_continuous("percent difference")
+
+ggplotly(p)
+```
+
+#### Table 1
+
+```{r}
+
+depth_stats %>% 
+  mutate(
+    difference = case_when(
+    percent_diff_min == 0 ~ "0_exact",
+    percent_diff_min >= 0 & percent_diff_min < 10 ~ "between 0 and 10 %",
+    percent_diff_min >= 10 & percent_diff_min < 20 ~ "between 10 and 20 %",
+    percent_diff_min >= 20 & percent_diff_min < 30 ~ "between 20 and 30 %",
+    percent_diff_min >= 30 & percent_diff_min < 40 ~ "between 30 and 40 %",
+    percent_diff_min >= 40 & percent_diff_min < 50 ~ "between 40 and 50 %",
+    percent_diff_min >= 50 & percent_diff_min < 60 ~ "between 50 and 60 %",
+    percent_diff_min >= 60 & percent_diff_min < 70 ~ "between 60 and 70 %",
+    percent_diff_min >= 70 ~ "greater than 70 %"
+    )
+  ) %>% 
+  group_by(difference) %>% 
+  summarise(`number of deployments` = n()) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+
+```
+
+:::
+
+## Potential Thresholds
+
+- Filtered out Madeline Point
+
+```{r}
+thresh_percent <- depth_stats %>% 
+  filter(!(station == "Madeline Point" & deployment_range == "2020-Feb-26 to 2020-Oct-20")) %>%
+  summarise(
+    mean = mean(percent_diff_min), sd = sd(percent_diff_min),
+    q_90 = quantile(percent_diff_min, prob = 0.90),
+    q_95 = quantile(percent_diff_min, prob = 0.95),
+    q_997 = quantile(percent_diff_min, prob = 0.997)
+  ) %>% 
+  mutate(
+    mean_sd = mean + 3 * sd,
+    across(where(is.numeric), round, digits = 2)
+  ) %>% 
+  select(-c(mean, sd))
+
+thresh_percent %>% 
+   datatable(options = dt_options, rownames = FALSE)
+ 
+```
+
+
+## Additional QC
+
+
+
