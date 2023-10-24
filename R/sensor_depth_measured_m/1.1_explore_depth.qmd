@@ -20,9 +20,11 @@ library(plotly)
 library(RColorBrewer)
 library(readr)
 library(summaryplots)
+
 source(here("functions/subchunkify.R"))
 
 theme_set(theme_light())
+
 dt_options <- list(
   dom = 'ft',
   paging = FALSE,
@@ -30,12 +32,15 @@ dt_options <- list(
   scrollY = "500px",
   columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
+
 dat <- read_csv(here("data/7_summary_depth_data.csv"), show_col_types = FALSE) %>%
   rename(depth = sensor_depth_at_low_tide_m) %>%
   mutate(units = "m", variable = "sensor_depth_measured_m")
+
 st_locations <- read_csv(
   here("data/Station_Locations_2022-12-06.csv"), show_col_types = FALSE
 )
+
 county_pal <- get_county_colour_palette(length(unique(st_locations$COUNTY)))
 theme_facet_plotly <- theme(panel.spacing.y = unit(15, "lines"))
 ```

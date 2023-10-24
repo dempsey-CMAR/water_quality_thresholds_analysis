@@ -87,7 +87,7 @@ September 19, 2023
 
 - Filtered data
 - Log depth is the estimated sensor depth at low tide.
-- Measured depth is the minimum measured depth measured by the sensor.
+- Measured depth is the minimum depth measured by the sensor.
 
 ## Estimated Depth vs. Measured Depth: Absolute Difference
 
@@ -156,7 +156,6 @@ depth_stats %>%
   datatable(options = dt_options, rownames = FALSE)
 
 ```
-
 :::
 
 ### Deployments with large difference (>= 5 m)
@@ -212,10 +211,15 @@ for(i in 1:nrow(large_diff)){
 ```
 :::
 
+- These deployments all look reasonable. It is likely that the sensor recorded correctly, but the depth recorded in the log is not correct.
+  - Shut-In Island 2020-Nov-08 looks like it moved.
+
+
 ## Potential Thresholds
 
 - Filtered out Madeline Point
 
+### Table 2
 ```{r}
 thresh_abs <- depth_stats %>% 
   filter(!(station == "Madeline Point" & deployment_range == "2020-Feb-26 to 2020-Oct-20")) %>%
@@ -232,12 +236,17 @@ thresh_abs <- depth_stats %>%
   select(-c(mean, sd))
 
 thresh_abs %>% 
-  datatable(options = dt_options, rownames = FALSE)
- 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = FALSE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))),
+    rownames = FALSE)
 ```
 
 
-### Estimated Depth vs. Measured Depth: Percent Difference
+## Estimated Depth vs. Measured Depth: Percent Difference
 
 ### Figure 1
 ```{r}
@@ -259,7 +268,9 @@ p <- ggplot(
 ggplotly(p, tooltip = "text")
 ```
 
-- Mostly shallow sensors with high % difference
+
+- Shallow sensors are more likely to have a high % difference than deep sensors.
+- Shallow sensors with a high % difference do not necessarily have a high absolute difference.
 
 ### Distributions
 
@@ -275,7 +286,6 @@ ggplotly(p)
 #### Table 1
 
 ```{r}
-
 depth_stats %>% 
   mutate(
     difference = case_when(
@@ -302,6 +312,7 @@ depth_stats %>%
 
 - Filtered out Madeline Point
 
+### Table 3
 ```{r}
 thresh_percent <- depth_stats %>% 
   filter(!(station == "Madeline Point" & deployment_range == "2020-Feb-26 to 2020-Oct-20")) %>%
@@ -318,12 +329,24 @@ thresh_percent <- depth_stats %>%
   select(-c(mean, sd))
 
 thresh_percent %>% 
-   datatable(options = dt_options, rownames = FALSE)
- 
+  datatable(
+    options= list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = FALSE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))),
+    rownames = FALSE)
+
 ```
 
 
-## Additional QC
+## Notes 
 
-
-
+- Use absolute difference because it is more straightforward to communicate than percent difference.
+- Filter out Madeline Point 2020-Feb-26 before calculating threshold.
+- Use q_95 as the threshold.
+- Notes for the usage considerations:
+  - Only 60 % of deployments have sensors that measure depth.
+  - There are only 1 - 2 sensors per string that measure depth. The log depths for these strings will be flagged where appropriate. The depths of the other sensors on the string should be interpreted cautiously; it is likely that they are also shallower or deeper than recorded in the log.
+  - Absolute difference was used to asses the log depth. In shallow areas, it would be more strict to use percent difference.
+  
