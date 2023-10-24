@@ -87,6 +87,8 @@ qc_summary <- dat_qc %>%
 
 `r Sys.Date()`
 
+`r params$thresh`
+
 # Summary Table
 
 Percent of observations in each deployment assigned with each qc flag. 

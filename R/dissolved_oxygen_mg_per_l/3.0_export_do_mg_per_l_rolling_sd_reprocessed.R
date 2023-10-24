@@ -1,5 +1,16 @@
 # August 21, 2023
 
+## Reprocessed data (no preliminary QC)
+
+# This script imports data and calculates the rolling standard deviation of
+# the dissolved oxygen - concentration observations
+
+# This calculation can take several minutes, especially for variables with
+# many observations (e.g., dissolved oxygen - percent saturation & temperature)
+
+# The data is exported as an rds file and imported for other thresholds analyses
+# (e.g., to evaluate thresholds)
+
 library(dplyr)
 library(here)
 library(lubridate)

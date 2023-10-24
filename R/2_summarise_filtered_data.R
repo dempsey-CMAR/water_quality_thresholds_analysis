@@ -65,8 +65,9 @@ dat_all <- dat_raw %>%
 
     # Dissolved Oxygen - % saturation
     !(COUNTY == "Inverness" & DEPTH %in% c(8, 18, 28, 36) &
-        VARIABLE == "Dissolved Oxygen"),
-    !(COUNTY == "Guysborough" & DEPTH == 60 & VARIABLE == "Dissolved Oxygen")
+        VARIABLE == "Dissolved Oxygen" & UNITS == "percent saturation"),
+    !(COUNTY == "Guysborough" & DEPTH == 60 &
+        VARIABLE == "Dissolved Oxygen" & UNITS == "percent saturation")
   )
 
 # summarize data ----------------------------------------------------------
@@ -116,12 +117,6 @@ dat_out <- bind_rows(
     month = MONTH
   )
 
-write_csv(dat_out, here("data/2_summary_filtered_data.csv"))
+#write_csv(dat_out, here("data/2_summary_filtered_data.csv"))
 
 
-#
-# x <- dat_all %>%
-#   filter(VARIABLE == "Salinity") %>%
-#   mutate(YEAR = year(TIMESTAMP)) %>%
-#   filter(YEAR == 2021)
-#  ggplot(x, aes(TIMESTAMP, VALUE)) + geom_point() + facet_wrap(~STATION)

@@ -5,6 +5,8 @@
 
 *.html
 
-data/
-data-raw/
 archive/
+output/
+data/
+
+rosm.cache/

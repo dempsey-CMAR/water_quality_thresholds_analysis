@@ -1,7 +1,17 @@
 # August 21, 2023
 
-# preliminary qc:
 ## Data sent to Open Data Portal (biofouling trimmed by humans)
+## Preliminary QC
+
+# This script imports data and calculates the rolling standard deviation of
+# the dissolved oxygen - concentration observations
+
+# This calculation can take several minutes, especially for variables with
+# many observations (e.g., dissolved oxygen - percent saturation & temperature)
+
+# The data is exported as an rds file and imported for other thresholds analyses
+# (e.g., thresholds calculation)
+# Additional QC made be required for those analyses
 
 library(dplyr)
 library(here)
