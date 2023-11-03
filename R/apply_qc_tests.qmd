@@ -1,0 +1,297 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width=8)
+
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(here)
+library(microbenchmark)
+library(purrr)
+library(qaqcmar)
+library(sensorstrings)
+library(stringr)
+
+source(here("functions/subchunkify.R"))
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  scrollX = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+dat_raw <- list.files(
+  here("reprocessed-data-raw"),
+  full.names = TRUE,
+  pattern = "shut-in") %>%
+  map(readRDS) %>%
+  list_rbind()
+
+
+vars <- dat_raw %>% 
+  ss_pivot_longer() %>% 
+  distinct(variable) %>% 
+  arrange()
+vars <- sort(vars$variable)
+```
+
+Processed on: `r Sys.Date()``
+
+# Shut-In Island
+
+## Figure 1
+```{r}
+#| fig-height: 8
+
+#ss_ggplot_variables(dat_raw)
+```
+
+
+## Gross Range Test
+
+### Table 1: Gross range thresholds
+```{r}
+thresholds %>% 
+  filter(county == "Halifax"| is.na(county), 
+         qc_test == "grossrange") %>% 
+  select(-c(county, qc_test, month)) %>% 
+  arrange(variable) %>% 
+  datatable(options = dt_options, rownames = FALSE, )
+```
+
+### Apply test & benchmark
+```{r}
+#| echo: true
+
+#dat_gr <- qc_test_grossrange(dat_raw)
+
+microbenchmark(dat_gr <- qc_test_grossrange(dat_raw), times = 5)
+```
+
+### Columns
+```{r}
+#| echo: true
+colnames(dat_gr)
+```
+
+### Flag Plots
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+#| fig-height: 10
+
+dat_gr <- dat_gr %>% 
+  qc_pivot_longer(qc_tests = "grossrange")
+
+for(i in 1:length(vars)){
+  
+#for(i in 2){
+  
+  dat_i <- dat_gr %>% 
+    filter(variable == vars[i])
+  
+  # height of figure 
+  sensors <- unique(dat_i$sensor_serial_number)
+  n_sensor <- length(sensors)
+  
+  if(n_sensor < 10) h = 2 * n_sensor
+  if(n_sensor >= 10) h = 35 # will get error if this is too big
+  
+  cat('\n####', vars[i], '\n')
+  
+  p_i <- qc_plot_flags(dat_i, qc_tests = "grossrange", vars = vars[i]) 
+  
+  subchunkify(p_i[[1]][[1]], fig_height = h, fig_width = 8.5)
+}
+ 
+```
+:::
+
+### Flag Summary
+```{r}
+dat_gr %>% 
+  qc_summarise_flags(qc_tests = "grossrange") %>% 
+  datatable(options = dt_options)
+```
+
+
+`r knitr::knit_exit()`
+
+```{r}
+#| echo: true
+
+p <- qc_plot_flags(dat_gr, qc_tests = "grossrange")
+```
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+#| message: false
+#| fig-height: 10
+
+for(i in seq_along(p)){
+  
+  p_i <- p[i]
+  
+  # height of figure j
+  # access data used to make fig
+  n_sensor <- length(unique(p_i[[1]][[1]][[1]]$sensor_serial_number))
+ # h = 2 * n_sensor
+  
+  cat('\n###', names(p_i[1]), '\n')
+  
+  print(p_i[[1]][[1]])
+  
+ # p_i <- p_i$temperature_degree_c
+  
+  #p_i <- ggplot(iris, aes(Sepal.Length, Sepal.Width)) + geom_point()
+  
+  #subchunkify(p_i[1], fig_height = h, fig_width = 8.5)
+}
+```
+:::
+
+
+
+## Flag Plots
+```{r}
+#| echo: true
+
+p <- qc_plot_flags(dat_gr, qc_tests = "grossrange")
+```
+
+::: panel-tabset
+
+### Dissolved Oxygen - mg/L
+```{r}
+#| fig-height: 6
+
+p$dissolved_oxygen_uncorrected_mg_per_l$grossrange
+```
+
+### Dissolved Oxygen - percent saturation
+```{r}
+#| fig-height: 6
+
+p$dissolved_oxygen_percent_saturation$grossrange
+```
+
+### Measured Sensor Depth
+```{r}
+#| fig-height: 6
+
+p$sensor_depth_measured_m$grossrange
+```
+
+### Temperature
+```{r}
+#| fig-height: 10
+
+p_temp <- qc_plot_flags(
+  dat_gr, qc_tests = "grossrange", vars = "temperature_degree_c", ncol = 3)
+
+p_temp$temperature_degree_c$grossrange
+```
+
+:::
+
+
+
+
+## Summary Table
+
+```{r}
+
+dat <- qc_test_all(dat_raw, qc_tests = c("grossrange", "climatology"))
+
+z <- dat %>% 
+  qc_summarise_flags(qc_tests = c("grossrange", "climatology"), deployment_range)
+
+
+x <- dat %>% 
+  qc_pivot_longer(qc_tests = c("grossrange", "climatology")) %>%
+  group_by(variable) %>% 
+  mutate(n_obs = n()) %>% 
+  ungroup() %>% 
+  pivot_longer(
+    cols = contains("_flag_value"), 
+    names_to = "qc_test", 
+    names_prefix = "_flag_value",
+    values_to = "flag_value"
+  ) %>% 
+  mutate(qc_test = str_remove(qc_test, "_flag_value")) %>% 
+  group_by(qc_test, variable, flag_value, n_obs) %>% 
+  summarise(n_fl  = n()) %>% 
+  ungroup() %>% 
+  mutate(n_percent = round(n_fl / n_obs, digits = 2)) %>% 
+  qc_assign_flag_labels() %>% 
+  select(-n_obs) %>% 
+  rename(n_flag = n_fl) %>% 
+  arrange(qc_test, variable, flag_value)
+
+y <- dat_gr %>% 
+  qc_pivot_longer(qc_tests = "grossrange") %>% 
+  group_by(variable) %>% 
+  mutate(n_obs = n()) %>% 
+  ungroup() %>% 
+  group_by(variable, n_obs, grossrange_flag_value) %>% 
+  summarise(n_fl  = n()) %>% 
+  ungroup() %>% 
+  mutate(n_percent = round(n_fl / n_obs, digits = 2)) %>% 
+  qc_assign_flag_labels() %>% 
+  select(-n_obs) %>% 
+  rename(n_flag = n_fl) %>% 
+  arrange(variable, grossrange_flag_value)
+
+
+dat <- qc_test_grossrange(dat_raw)
+
+depth <- dat %>% 
+  filter(grossrange_flag_sensor_depth_measured_m == 2) %>% 
+  select(
+    sensor_type, sensor_serial_number, sensor_depth_at_low_tide_m,
+    value_sensor_depth_measured_m,
+    grossrange_flag_sensor_depth_measured_m
+  )
+
+```
+
+
+
+```{r}
+# hobo5 <- dat_gr %>% 
+#   filter(sensor_depth_at_low_tide_m == 5 & sensor_type == "hobo") %>% 
+#   select(
+#     deployment_range, timestamp_utc, sensor_type, sensor_serial_number,
+#     sensor_depth_at_low_tide_m, 
+#     value_dissolved_oxygen_uncorrected_mg_per_l,
+#     value_temperature_degree_c,
+#     grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l,
+#     grossrange_flag_temperature_degree_c,
+#     grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l
+#     )
+# 
+# p <- qc_plot_flags(hobo5, qc_tests = "grossrange", vars = "temperature_degree_c")
+# 
+# p$temperature_degree_c$grossrange
+# 
+# p <- qc_plot_flags(hobo5, qc_tests = "grossrange", vars = "dissolved_oxygen_uncorrected_mg_per_l")
+# p$dissolved_oxygen_uncorrected_mg_per_l$grossrange
+
+```
+
