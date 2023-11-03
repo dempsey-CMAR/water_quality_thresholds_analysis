@@ -274,14 +274,25 @@ dat_depth <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>%
     )
 
 
-# depth depends on where sensor is on string, not historical data
-user_depth <- expand.grid(
-  county = c(unique(dat_depth$county)),
-  threshold = c("user_min", "user_max")) %>%
+# # depth depends on where sensor is on string, not historical data
+# user_depth <- expand.grid(
+#   county = c(unique(dat_depth$county)),
+#   threshold = c("user_min", "user_max")) %>%
+#   mutate(
+#     qc_test = "grossrange",
+#     variable = "sensor_depth_measured_m",
+#     threshold_value = NA
+#   )
+
+# deepest station is 80 m (Nov-2023), but could add deeper stations in future
+user_depth <- data.frame(
+  county = NA,
+  threshold = c("user_min", "user_max"),
+  threshold_value = c(0, 120)
+) %>%
   mutate(
     qc_test = "grossrange",
     variable = "sensor_depth_measured_m",
-    threshold_value = NA
   )
 
 # no monthly climatology cycle
