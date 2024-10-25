@@ -1,0 +1,680 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(purrr)
+library(qaqcmar)
+library(RColorBrewer)
+library(readr)
+library(sensorstrings)
+library(strings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Measured Sensor Depth (m)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# data - preliminary QC (Olding Island Removed)
+dat_raw <- readRDS(here("data/depth_rolling_sd_reprocessed.rds")) %>% 
+  select(
+    -c(int_sample, n_sample, 
+       n_sample_effective, sd_roll,
+       rolling_sd_flag_sensor_depth_measured_m)) %>% 
+  rename(sensor_depth_at_low_tide_m = depth_log) %>% 
+  #ss_pivot_longer() %>%
+  filter(!(station == "Olding Island" &
+             deployment_range == "2022-Jun-03 to 2022-Sep-30" &
+             sensor_depth_at_low_tide_m  == 3)) %>% 
+  mutate(
+    DEPTH = factor(sensor_depth_at_low_tide_m ),
+    YEAR = year(timestamp_utc),
+    YEAR = factor(YEAR),
+    MONTH = month(timestamp_utc)
+  )
+ 
+counties <- unique(dat_raw$county)
+
+dat_all <- NULL
+
+for(i in seq_along(counties)) {
+  
+  county_i <- counties[i]
+  
+  dat_all[[i]] <- dat_raw %>% 
+    filter(county == county_i) %>% 
+    qc_test_spike(keep_spike_cols = TRUE) %>% 
+    select(-c(spike_high, spike_low, spike_flag_sensor_depth_measured_m))
+}
+
+dat_all <- dat_all %>% 
+  map_df(bind_rows) %>% 
+  select(
+    COUNTY = county, 
+    STATION = station, 
+    DEPLOYMENT_PERIOD = deployment_range,
+    TIMESTAMP = timestamp_utc,
+    VALUE = value_sensor_depth_measured_m,
+    everything()) %>% 
+  filter(!is.na(spike_value)) %>% 
+  convert_depth_to_ordered_factor()
+
+# filtered data
+dat_filt <- dat_all %>% 
+  filter(
+    # freshwater STATIONs
+     !(STATION %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    # suspect range
+     !(STATION == "Long Beach" & 
+         DEPLOYMENT_PERIOD == "2020-Jul-16 to 2020-Nov-29" & DEPTH == 5),
+    !(STATION == "Sandy Cove" & 
+        DEPLOYMENT_PERIOD == "2020-Jul-16 to 2020-Nov-30" & DEPTH == 5),
+    !(STATION == "Tickle Island 1" & 
+        DEPLOYMENT_PERIOD == "2020-Oct-21 to 2021-Aug-25" & DEPTH == 5)
+  )
+
+county_pal <- get_county_colour_palette(length(unique(dat_all$COUNTY)))
+depth_pal <- viridis(length(unique(dat_all$DEPTH)), direction = -1)
+year_pal <- viridis( length(unique(dat_all$YEAR)), option = "C")
+
+theme_facet_plotly <- theme(
+  panel.spacing.y = unit(30, "lines"),
+  panel.spacing.x = unit(20, "lines")
+)
+
+```
+
+# Measured Depth Spikes
+
+November 9, 2023
+
+- This data is from the reprocessed Coastal Monitoring Program data.
+ - Measured sensor depth was not extracted for the Coastal Monitoring Program data submitted to the NS Open Data Portal in December 2022.
+ 
+- Preliminary QC  
+  - Olding Island 2022-06-03 (3 m ) was removed due to obvious outliers. 
+ 
+- Filtered data is based on 0.1_depth_additional_qc.html and 1.1_explore_depth_html
+   - Freshwater stations not expected to have distinct tidal signal
+    - Hourglass Lake, Piper Lake
+  - Measured outside gross range
+    - Olding Island, 2022-06-03, 3 m
+  - Suspect range compared to other deployments in the area; likely the strings were pushed over by the tide and / or weighed down by biofouling.
+    - Long Beach 2020-07-16, 5 m
+    - Sandy Cove 2020-07-16, 5 m
+    - Tickle Island 1 2020-10-21, 5 m 
+
+- Following QARTOD: $$spike_{value} = abs(value - spike_{ref})$$ where $spike_{ref} = (lead_{value} - lag_{value}) / 2$
+
+## Preliminary QC 
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 1: All observations
+```{r}
+#| label: fig-dist-all
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m).
+
+p <- plot_histogram(dat_all, hist_col = spike_value, binwidth = 0.1) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 2: By depth
+```{r}
+#| label: fig-dist-all-depth
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 3: By year
+```{r}
+#| label: fig-dist-all-year
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 4: County 
+```{r}
+#| label: fig-dist-county
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by county (binwidth = 0.1 m).
+
+p <- dat_all %>% 
+  plot_histogram(hist_col = spike_value, binwidth = 0.1) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 5: County + Depth
+```{r}
+#| label: fig-dist-county-depth
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 6: County + Year
+```{r}
+#| label: fig-dist-county-year
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+counties <- unique(dat_all$COUNTY)
+
+dat_all <- dat_all %>% 
+  mutate(MONTH = month(TIMESTAMP, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_all %>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = spike_value, binwidth = 0.1, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+### Summary Statistics
+
+::: panel-tabset
+
+#### Figure 7: Central Tendancy
+```{r}
+#| fig-height: 6
+#| fig-cap: The mean and standard deviation of spike value in each county.
+#| label: fig-mean-all
+
+stats_all <- dat_all %>% 
+  summarise(
+    max = max(spike_value),
+    mean = mean(spike_value),
+    med = median(spike_value),
+    stdev = sd(spike_value),
+    
+    q_90 = quantile(spike_value, prob = 0.90),
+    q_95 = quantile(spike_value, prob = 0.95),
+    q_997 = quantile(spike_value, prob = 0.997)
+  ) %>% 
+  mutate(COUNTY = "All") %>% 
+  bind_rows(
+    dat_all %>% 
+      group_by(COUNTY) %>% 
+      summarise(
+        max = max(spike_value),
+        mean = mean(spike_value),
+        med = median(spike_value),
+        stdev = sd(spike_value),
+        
+        q_90 = quantile(spike_value, prob = 0.90),
+        q_95 = quantile(spike_value, prob = 0.95),
+        q_997 = quantile(spike_value, prob = 0.997)
+      ) 
+  ) %>%
+  mutate(
+    variable = "dissolved_oxygen_percent_saturation",
+    thresh_3sd = mean + 3 * stdev,
+    across(.cols = where(is.numeric), .fns = round, digits = 2)
+  ) %>% 
+  select(county = COUNTY, everything())
+
+p <- plot_mean_sd_county(stats_all)
+
+ggplotly(p)
+```
+
+#### Figure 8: Quantiles
+```{r}
+#| fig-cap: Upper quantiles.
+#| fig-height: 6
+#| label: fig-quantiles-all
+
+p <- stats_all %>% 
+  select(county, contains("q")) %>% 
+  pivot_longer(cols = contains("q"), names_to = "quantile") %>% 
+  ggplot(aes(quantile, value, group = county, col = county)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
+  scale_y_continuous(limits = c(0, 1.6))
+
+ggplotly(p)
+```
+
+#### Table 1: Summary statistics
+```{r}
+stats_all %>% 
+  select(-c(variable, max, contains("thresh"))) %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE)
+```
+:::
+
+
+
+
+## Filtered Data
+
+### Pooled
+
+::: panel-tabset
+
+#### Figure 9: All observations
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m).
+
+p <- plot_histogram(dat_filt, hist_col = spike_value, binwidth = 0.1) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 10: By depth
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), coloured by depth.
+
+p <- plot_histogram(
+  dat_filt, hist_col = spike_value, binwidth = 0.1,
+  fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+#### Figure 11: By year
+```{r}
+#| fig-height: 6
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1, 
+  fill_col = YEAR, pal = year_pal
+) +
+  x_axis
+
+ggplotly(p)
+```
+
+:::
+
+### County
+
+::: panel-tabset
+
+#### Figure 12: County 
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by county (binwidth = 0.1 m).
+
+p <- dat_filt %>% 
+  plot_histogram(hist_col = spike_value, binwidth = 0.1) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 13: County + Depth
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), within each county, coloured by depth.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1, fill_col = DEPTH, pal = depth_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+
+#### Figure 14: County + Year
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), within each county coloured by year.
+
+p <- plot_histogram(
+  dat_all, hist_col = spike_value, binwidth = 0.1, fill_col = YEAR, pal = year_pal
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+:::
+
+#### County + Month + Year
+
+::: panel-tabset
+```{r}
+#| fig-height: 10
+#| results: "asis"
+
+dat_filt <- dat_filt %>% 
+  mutate(MONTH = month(TIMESTAMP, label = TRUE))
+
+for(i in seq_along(counties)){
+  
+  county_i <- counties[i]
+  dat_i <- dat_filt%>% 
+    filter(COUNTY == county_i) 
+  
+  cat('\n###', county_i, '\n')
+  
+  p <- plot_histogram(
+    dat_i, hist_col = spike_value, binwidth = 0.1, fill_col = YEAR, pal = year_pal
+  ) +
+    x_axis +
+    facet_wrap(~MONTH, ncol = 3)  
+  
+  print(p)
+}
+
+```
+:::
+
+
+
+
+### Summary Statistics
+
+::: panel-tabset
+
+#### Figure 15: Central Tendancy
+```{r}
+#| fig-height: 6
+#| fig-cap: The mean and standard deviation of spike value in each county.
+#| label: fig-mean-filt
+
+stats_filt <- dat_filt %>% 
+  summarise(
+    max = max(spike_value),
+    mean = mean(spike_value),
+    med = median(spike_value),
+    stdev = sd(spike_value),
+    
+    q_90 = quantile(spike_value, prob = 0.90),
+    q_95 = quantile(spike_value, prob = 0.95),
+    q_997 = quantile(spike_value, prob = 0.997)
+  ) %>% 
+  mutate(COUNTY = "All") %>% 
+  bind_rows(
+    dat_filt %>% 
+      group_by(COUNTY) %>% 
+      summarise(
+        max = max(spike_value),
+        mean = mean(spike_value),
+        med = median(spike_value),
+        stdev = sd(spike_value),
+        
+        q_90 = quantile(spike_value, prob = 0.90),
+        q_95 = quantile(spike_value, prob = 0.95),
+        q_997 = quantile(spike_value, prob = 0.997)
+      ) 
+  ) %>%
+  mutate(
+    variable = "sensor_depth_measured_m",
+    thresh_3sd = mean + 3 * stdev,
+    across(.cols = where(is.numeric), .fns = round, digits = 2)
+  ) %>% 
+  select(county = COUNTY, everything())
+
+p <- plot_mean_sd_county(stats_filt)
+
+ggplotly(p)
+```
+
+#### Figure 16: Quantiles
+```{r}
+#| fig-cap: Upper quantiles.
+#| fig-height: 6
+#| label: fig-quantiles-filt
+
+p <- stats_filt %>% 
+  select(county, contains("q")) %>% 
+  pivot_longer(cols = contains("q"), names_to = "quantile") %>% 
+  ggplot(aes(quantile, value, group = county, col = county)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
+  scale_y_continuous(limits = c(0, 1.6))
+
+ggplotly(p)
+```
+
+#### Table 2: Summary statistics
+```{r}
+stats_filt %>% 
+  select(-c(variable, max, contains("thresh"))) %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE)
+```
+:::
+
+## Filtered - By Sensor
+
+::: panel-tabset
+
+#### Figure 15: Sensor 
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations by sensor type (binwidth = 0.1 m).
+
+p <- dat_filt %>% 
+  plot_histogram(hist_col = spike_value, binwidth = 0.1) +
+  x_axis +
+  facet_wrap(~sensor_type, scales = "free", ncol = 1) +
+  theme_facet_plotly
+
+ggplotly(p)
+```
+
+#### Figure 16: County + Sensor
+```{r}
+#| fig-height: 8
+#| fig-cap: Distribution of measured depth observations (binwidth = 0.1 m), within each county, coloured by sensor type.
+
+p <- plot_histogram(
+  dat_filt, hist_col = spike_value, binwidth = 0.1, fill_col = sensor_type, pal = c("#F8766D", "#00BFC4")
+) +
+  x_axis +
+  facet_wrap(~COUNTY, scales = "free", ncol = 3) +
+  theme_facet_plotly
+  
+ggplotly(p)
+```
+:::
+
+### Summary Statistics
+
+::: panel-tabset
+
+#### Figure 15: Central Tendancy
+```{r}
+#| fig-height: 6
+#| message: false
+#| fig-cap: The mean and standard deviation of spike value in each county.
+#| label: fig-mean-filt-sensor
+
+stats_sensor <- dat_filt %>% 
+  group_by(sensor_type) %>% 
+  summarise(
+    max = max(spike_value),
+    mean = mean(spike_value),
+    med = median(spike_value),
+    stdev = sd(spike_value),
+    
+    q_90 = quantile(spike_value, prob = 0.90),
+    q_95 = quantile(spike_value, prob = 0.95),
+    q_997 = quantile(spike_value, prob = 0.997),
+    q_999 = quantile(spike_value, prob = 0.999)
+  ) %>% 
+  mutate(COUNTY = "All") %>% 
+  bind_rows(
+    dat_filt %>% 
+      group_by(COUNTY, sensor_type) %>% 
+      summarise(
+        max = max(spike_value),
+        mean = mean(spike_value),
+        med = median(spike_value),
+        stdev = sd(spike_value),
+        
+        q_90 = quantile(spike_value, prob = 0.90),
+        q_95 = quantile(spike_value, prob = 0.95),
+        q_997 = quantile(spike_value, prob = 0.997),
+        q_999 = quantile(spike_value, prob = 0.999)
+      ) 
+  ) %>%
+  mutate(
+    variable = "sensor_depth_measured_m",
+    thresh_3sd = mean + 3 * stdev,
+    across(.cols = where(is.numeric), .fns = round, digits = 2)
+  ) %>% 
+  select(county = COUNTY, everything())
+
+p <- plot_mean_sd_county(stats_sensor)
+
+ggplotly(p)
+```
+
+#### Figure 16: Quantiles
+```{r}
+#| fig-cap: Upper quantiles.
+#| fig-height: 6
+#| label: fig-quantiles-filt-sensor
+
+p <- stats_sensor %>% 
+  select(county, sensor_type, contains("q")) %>% 
+  pivot_longer(cols = contains("q"), names_to = "quantile") %>% 
+  ggplot(aes(quantile, value, group = county, col = county)) +
+  geom_point() +
+  geom_line() +
+  scale_color_manual(values = c("grey20", county_pal), drop = FALSE) +
+  scale_y_continuous(limits = c(0, 2.1)) +
+  facet_wrap(~sensor_type, ncol = 1) +
+  theme(panel.spacing.y = unit(30, "lines"))
+
+ggplotly(p)
+```
+
+#### Table 2: Summary statistics
+```{r}
+stats_sensor %>% 
+  select(county, sensor_type, mean, q_90, q_95, q_997) %>% 
+  datatable(
+    options = list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+    ), rownames = FALSE)
+```
+:::

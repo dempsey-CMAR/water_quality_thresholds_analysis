@@ -1,0 +1,201 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(here)
+library(ggplot2)
+library(leaflet)
+library(lubridate)
+library(plotly)
+library(qaqcmar)
+library(RColorBrewer)
+library(readr)
+library(strings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+theme_set(theme_light())
+
+x_axis <- scale_x_continuous("Temperature (degree C)")
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# preliminary QC
+dat_temp <- readRDS(here("data/temp_rolling_sd_prelim_qc.rds")) %>% 
+    select(
+    -c(sensor_type, int_sample, n_sample, rolling_sd_flag_temperature_degree_c)
+  ) %>%
+  mutate(depth = factor(sensor_depth_at_low_tide_m)) %>%
+  rename(temperature_degree_c = value_temperature_degree_c) %>%
+  filter(
+    !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+    !(county == "Inverness" & depth %in% c(18, 23, 26, 28, 36, 40))
+  )
+    
+# reprocessed data (no preliminary QC)
+dat_raw <- readRDS(here("data/temp_rolling_sd_reprocessed.rds")) %>%
+  select(
+    -c(int_sample, n_sample, n_sample_effective, sd_roll, rolling_sd_flag_temperature_degree_c)
+  ) %>%
+  rename(temperature_degree_c = value_temperature_degree_c) %>% 
+  filter(county == county)    
+    
+#   import_strings_data(input_path = here("data-raw")) %>%
+#   select(county = COUNTY, station = STATION, 
+#          deployment_range = DEPLOYMENT_PERIOD,
+#          timestamp_utc = TIMESTAMP, 
+#          sensor_depth_at_low_tide_m = DEPTH, 
+#          VARIABLE, VALUE) %>%
+#   filter(VARIABLE == "Temperature") %>%
+#   rename(temperature_degree_c = VALUE) %>% 
+#   select(-VARIABLE) %>% 
+#   mutate(
+#     sensor_depth_at_low_tide_m = factor(round(as.numeric(sensor_depth_at_low_tide_m))),
+#     MONTH = month(timestamp_utc),
+#     YEAR = factor(year(timestamp_utc))
+#   ) 
+# 
+# # filtered data
+# dat_filt <- dat_all %>% 
+#   filter(
+#     !(station %in% c("Piper Lake", "Hourglass Lake", "0193", "Sissiboo")),
+#     !(county == "Inverness" & 
+#         sensor_depth_at_low_tide_m %in% c(18, 23, 26, 28, 36, 40)) 
+#   )
+         
+# county_pal <- get_county_colour_palette(length(unique(dat_all$county)))
+# depth_pal <- viridis(length(unique(dat_all$sensor_depth_at_low_tide_m)), direction = -1)
+# year_pal <- viridis( length(unique(dat_all$YEAR)), option = "C")
+# 
+# theme_facet_plotly <- theme(
+#   panel.spacing.y = unit(30, "lines"),
+#   panel.spacing.x = unit(20, "lines")
+# )
+```
+
+# Temperature 
+
+January 15, 2024
+
+- Data submitted to the Open Data Portal in December 2022.
+- Depth rounded to nearest whole number
+  - Results in depth of 0 m for 1042, Captains Pond, Ile due Havre, Sober Island, and Back Harbour.
+  
+- Preliminary QC (submitted to Open Data Portal)
+  - Obvious outliers removed.
+
+- Filtered Data
+  - Fresh water and other "outlier" stations not considered.
+    - Piper Lake, Hourglass Lake, 0193 (Denas Pond), Sissiboo
+  - Data below the thermocline in Whycocomagh Bay
+    - 0814x East and 0814x West, Whycocomagh Basin: 18 m
+    - Aberdeen, Whycocomagh Bay: 18, 23, and 28 m
+    - Deep Basin, Whycocomagh Basin: 26, 36, and 40 m
+
+# User Thresholds: All Data
+
+```{r}
+user_temp1 <- dat_temp %>%
+  group_by(county) %>%
+  qc_calculate_user_thresholds(var = temperature_degree_c, keep_stats = TRUE) %>% 
+  pivot_wider(values_from = "threshold_value", names_from = "threshold") %>% 
+  select(county, mean_var, sd_var, user_min, user_max)
+
+datatable(user_temp1, options = dt_options, rownames = FALSE)
+```
+
+
+# User Thresholds: Climatology
+
+```{r}
+user_temp2 <- dat_temp %>%
+  qc_calculate_climatology_thresholds(
+    var = temperature_degree_c, county, keep_stats = TRUE) %>%
+  filter(threshold == "mean_var") %>% 
+  pivot_wider(values_from = "threshold_value", names_from = "threshold") %>% 
+  summarise(
+    mean_mean = round(mean(mean_var), digits = 3), 
+    sd_mean = round(sd(mean_var), digits = 3),
+    user_min = round(mean_mean - 3 * sd_mean, digits = 3),
+    user_max = round(mean_mean + 3 * sd_mean, digits = 3)
+  ) 
+
+datatable(user_temp2, options = dt_options, rownames = FALSE)
+```
+
+# Compare Threshold Values
+
+```{r}
+
+thresh <- user_temp1 %>% 
+  select(county, user_min1 = user_min, user_max1 = user_max) %>% 
+  left_join(
+    user_temp2 %>% 
+      select(county, user_min2 = user_min, user_max2 = user_max), by = "county"
+  ) 
+
+thresh %>% 
+  mutate(
+    diff_min = round(100 * (user_min1 - user_min2) / user_min2, digits = 2),
+    diff_max = round(100 * (user_max1 - user_max2) / user_max2, digits = 2)
+  ) %>% 
+ # arrange(diff_min) %>% 
+  select(county, user_min1, user_min2, diff_min, user_max1, user_max2, diff_max) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+# Compare Number of Flagged Observations
+
+```{r}
+
+dat_flag <- dat_raw %>% 
+  left_join(thresh, by = "county") %>% 
+  mutate(
+    flag1 = if_else(
+      temperature_degree_c < user_min1 | temperature_degree_c > user_max1, 1, 0),
+    flag2 = if_else(
+      temperature_degree_c < user_min2 | temperature_degree_c > user_max2, 1, 0),
+    
+    flag_low = if_else(
+      temperature_degree_c < user_min1 | temperature_degree_c < user_min2, 1, 0)
+  ) %>% 
+  group_by(county) %>% 
+  summarise(
+    n = n(),
+    
+    n_flag1 = sum(flag1),
+    n_flag1_percent = round(100 * n_flag1 / n, digits =3),
+    
+    n_flag2 = sum(flag2),
+    n_flag2_percent = round(100 * n_flag2 / n, digits =3),
+    
+    n_low = sum(flag_low)
+  ) %>% 
+  select(
+    county, n, n_low,
+    n_flag1, n_flag2,
+    n_flag1_percent, n_flag2_percent
+  )
+  
+datatable(dat_flag, options = dt_options, rownames = FALSE)
+
+```
+
