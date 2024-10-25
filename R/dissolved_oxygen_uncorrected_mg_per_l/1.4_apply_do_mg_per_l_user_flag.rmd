@@ -1,0 +1,155 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+params: 
+  thresh: thresh
+---
+
+```{r, set-up, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(ggplot2)
+library(here)
+library(purrr)
+library(qaqcmar)
+library(sensorstrings)
+library(strings)
+library(tgc)
+library(tidyr)
+library(zoo)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+flag_colours <- c("chartreuse4", "#E6E1BC", "#EDA247", "#DB4325", "grey24")
+
+dt_options <- list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      pageLength = 500,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# all data (reprocessed)
+dat_raw <- list.files(
+  here("reprocessed-data-raw"), full.names = TRUE, pattern = ".rds"
+) %>%
+  purrr::map(readRDS) %>%
+  list_rbind() %>%
+  select(
+    -c(latitude, longitude, lease, string_configuration),
+    -contains("temperature"), -contains("salinity"), -contains("measured"),
+    -contains("percent_saturation")) %>%
+  na.omit() %>%   # removes rows without DO data
+  mutate(
+    sensor_depth_at_low_tide_m = round(as.numeric(sensor_depth_at_low_tide_m)),
+  ) 
+
+```
+
+```{r, import-data}
+#| message: FALSE
+
+dat_qc <- dat_raw %>% 
+  rename(
+    value_dissolved_oxygen_uncorrected_mg_per_l = 
+      dissolved_oxygen_uncorrected_mg_per_l) %>% 
+  mutate(
+    grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l = 
+      if_else(value_dissolved_oxygen_uncorrected_mg_per_l < params$thresh, 3, 1)
+  )
+
+# summarise flagged observations
+qc_summary <- dat_qc %>%
+  qc_assign_flag_labels() %>%
+  group_by(
+    deployment_range, station, 
+    grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l ) %>%
+  summarise(flag_count = n()) %>%
+  mutate(flag_percent = round((100 * flag_count / sum(flag_count)), digits = 3)) %>%
+  ungroup() %>%
+  select(-flag_count) %>%
+  pivot_wider(
+    names_from = "grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l", 
+    values_from = "flag_percent") %>%
+  arrange(station, deployment_range)
+```
+
+# QC Flags: Dissolved Oxygen (mg/L) user_min
+
+`r Sys.Date()`
+
+`r params$thresh`
+
+# Summary Table
+
+Percent of observations in each deployment assigned with each qc flag. 
+
+```{r}
+datatable(qc_summary, options = dt_options, rownames = FALSE)
+```
+
+# Figures
+
+```{r, body} 
+#| results: 'asis'
+#| message: FALSE
+
+#if("Suspect/Of Interest" %in% colnames(qc_summary)) {
+  
+  depl_id <- qc_summary %>%
+    distinct(deployment_range, station) 
+  
+  stations <- unique(depl_id$station)
+  
+  for(i in seq_along(stations)){
+    
+    station_i <- stations[i]
+    
+    deployments <- depl_id %>% filter(station == station_i)
+    deployments <- deployments$deployment_range
+    
+    cat('\n##', station_i, '\n')
+    
+    cat('\n')
+    
+    # plot for each deployment
+    for(j in 1:length(deployments)){
+      
+      depl_j <- deployments[j]
+      
+      # subset data to station of interest
+      dat_j <- dat_qc %>%
+        filter(station == station_i, deployment_range == depl_j) %>%
+        qc_pivot_longer(qc_tests = "grossrange") %>% 
+        ss_convert_depth_to_ordered_factor()
+      
+      # height of figure j
+      n_sensor <- length(unique(dat_j$sensor_serial_number))
+      
+      if(n_sensor == 1) h = 2.75
+      if(n_sensor > 1) h = 2.75 * n_sensor
+      
+      
+      p <- qc_plot_flags(dat_j)
+      p <- p$dissolved_oxygen_uncorrected_mg_per_l$grossrange
+
+    
+      cat('\n###', depl_j, '\n')
+      
+      subchunkify(p, fig_height = h, fig_width = 8.5)
+      
+      cat('\n')
+    }
+  }
+
+
+```

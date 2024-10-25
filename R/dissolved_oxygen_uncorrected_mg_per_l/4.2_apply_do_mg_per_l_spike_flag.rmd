@@ -1,0 +1,158 @@
+---
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+params: 
+  thresh: thresh
+  quartiles: quartiles
+---
+
+```{r, set-up, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(dplyr)
+library(DT)
+library(ggplot2)
+library(here)
+library(purrr)
+library(qaqcmar)
+library(sensorstrings)
+library(strings)
+library(tgc)
+library(tidyr)
+
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+flag_colours <- c("chartreuse4", "#E6E1BC", "#EDA247", "#DB4325", "grey24")
+
+dt_options <- list(
+      dom = 'ft',
+      paging = FALSE,
+      searching = TRUE,
+      pageLength = 500,
+      columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+thresh <- params$thresh
+spike_table <- params$quartiles %>% 
+  select(variable, all_of(thresh)) %>%
+  rename(spike_low = all_of(thresh)) %>% 
+  mutate(spike_high = 3 * spike_low)
+attr(spike_table$spike_low, "names") <- NULL
+
+# reprocessed data (no preliminary QC)
+dat_raw <- readRDS(here("data/do_mg_per_l_rolling_sd_reprocessed.rds")) %>%
+  select(-c(int_sample, 
+            n_sample, 
+            n_sample_effective, 
+            sd_roll, 
+            rolling_sd_flag_dissolved_oxygen_uncorrected_mg_per_l)) %>% 
+  mutate(sensor_type = sensor_serial_number) # need sensor_type column for plot function
+```
+
+```{r, import-data}
+#| message: FALSE
+
+counties <- unique(dat_raw$county)
+
+dat_qc <- NULL
+
+for(i in seq_along(counties)) {
+  
+  county_i <- counties[i]
+  
+  dat_qc[[i]] <- dat_raw %>% 
+    filter(county == county_i) %>% 
+    qc_test_spike(spike_table = spike_table) 
+}
+
+dat_qc <- dat_qc %>% 
+  map_df(bind_rows) 
+
+# summarise flagged observations
+qc_summary <- dat_qc %>%
+  rename(spike_flag = spike_flag_dissolved_oxygen_uncorrected_mg_per_l) %>%
+  qc_assign_flag_labels() %>%
+  group_by(deployment_range, station, spike_flag) %>%
+  summarise(flag_count = n()) %>%
+  mutate(flag_percent = round((100 * flag_count / sum(flag_count)), digits = 3)) %>%
+  ungroup() %>%
+  select(-flag_count) %>%
+  pivot_wider(names_from = "spike_flag", values_from = "flag_percent") %>%
+  arrange(station, deployment_range)
+```
+
+# QC Flags: Dissolved Oxygen, Spike Test
+
+`r Sys.Date()`
+
+`r thresh`
+
+# Summary Table
+
+Percent of observations in each deployment assigned with each qc flag. 
+
+```{r}
+datatable(qc_summary, options = dt_options, rownames = FALSE)
+```
+
+# Figures
+
+```{r, body} 
+#| results: 'asis'
+#| message: FALSE
+
+depl_id <- qc_summary %>%
+  distinct(deployment_range, station) 
+
+stations <- unique(depl_id$station)
+
+for(i in seq_along(stations)){
+  
+  station_i <- stations[i]
+  
+  deployments <- depl_id %>% filter(station == station_i)
+  deployments <- deployments$deployment_range
+  
+  cat('\n##', station_i, '\n')
+  
+  cat('\n')
+  
+  # plot for each deployment
+  for(j in 1:length(deployments)){
+    
+    depl_j <- deployments[j]
+    
+    # subset data to station of interest
+    dat_j <- dat_qc %>%
+      filter(station == station_i, deployment_range == depl_j) %>%
+      qc_pivot_longer(qc_tests = "spike") %>% 
+      ss_convert_depth_to_ordered_factor()
+    
+    # height of figure j
+    n_sensor <- length(unique(dat_j$sensor_serial_number))
+    
+    if(n_sensor == 1) h = 2.75
+    if(n_sensor > 1) h = 2.75 * n_sensor
+    
+    
+    p <- qc_plot_flags(dat_j, qc_tests = "spike")
+    p <- p$dissolved_oxygen_uncorrected_mg_per_l$spike
+    
+    cat('\n###', depl_j, '\n')
+    
+    subchunkify(p, fig_height = h, fig_width = 8.5)
+    
+    #cat(paste("Figure ", k, ": ", station.j, fig.caption,  sep = ""), '\n')
+    
+    cat('\n')
+  }
+}
+
+
+```
