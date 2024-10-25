@@ -183,24 +183,35 @@ dat_sal <- readRDS(here("data/sal_rolling_sd_prelim_qc.rds")) %>%
   ss_pivot_wider() %>%
   mutate(county_sal = if_else(county == "Inverness", "Inverness", NA_character_))
 
-# climatology thresholds - not enough data to calculate
-climatology_sal <- expand.grid(
-  month = 1:12,
-  county = c("Inverness",  NA_character_),
-  threshold = c("season_min", "season_max")) %>%
-  mutate(
-    qc_test = "climatology",
-    variable = "salinity_psu",
-    threshold_value = NA
-  )
-attr(climatology_sal, "out.attrs") <- NULL
-
 # gross range user thresholds
 user_sal <- dat_sal %>%
   group_by(county_sal) %>%
   qc_calculate_user_thresholds(var = salinity_psu, n_sd = 3) %>%
   ungroup() %>%
   rename(county = county_sal)
+
+# climatology thresholds - not enough data to calculate.
+# Use grossrange user thresholds instead
+climatology_sal <- expand.grid(
+  month = 1:12,
+  county = c("Inverness",  NA_character_)) %>%
+  left_join(
+    user_sal %>%
+      pivot_wider(names_from = "threshold", values_from = "threshold_value"),
+    by = "county"
+    ) %>%
+  rename(season_min = user_min, season_max = user_max) %>%
+  pivot_longer(
+    cols = c("season_min", "season_max"),
+    names_to = "threshold",
+    values_to = "threshold_value"
+  ) %>%
+  mutate(
+    qc_test = "climatology",
+    variable = "salinity_psu"
+  )
+#attr(climatology_sal, "out.attrs") <- NULL
+
 
 # rolling standard deviation thresholds
 rolling_sd_sal <- dat_sal %>%
@@ -218,7 +229,8 @@ spike_sal <- dat_sal %>%
     stat = "quartile", prob = 0.997,
     var = salinity_psu,
     fail_factor = 3
-  )
+  ) %>%
+  rename(county = county_sal)
 
 
 #  Sensor Depth --------------------------------------------------
@@ -257,18 +269,6 @@ depth_crosscheck <- dat_depth %>%
 
 
 # Measured Sensor Depth ---------------------------------------------------
-
-climatology_depth <- expand.grid(
-  month = 1:12,
-  county = NA_character_,
-  threshold = c("season_min", "season_max")) %>%
-  mutate(
-    qc_test = "climatology",
-    variable = "sensor_depth_measured_m",
-    threshold_value = NA
-  )
-attr(climatology_depth, "out.attrs") <- NULL
-
 # user thresholds
 user_depth <- data.frame(
   county = NA,
@@ -278,6 +278,27 @@ user_depth <- data.frame(
   mutate(
     qc_test = "grossrange",
     variable = "sensor_depth_measured_m",
+  )
+
+# climatology not calculated
+# Use grossrange user thresholds instead
+climatology_depth <-  expand.grid(
+  month = 1:12,
+  county = NA_character_) %>%
+  left_join(
+    user_depth %>%
+      pivot_wider(names_from = "threshold", values_from = "threshold_value"),
+    by = "county"
+  ) %>%
+  rename(season_min = user_min, season_max = user_max) %>%
+  pivot_longer(
+    cols = c("season_min", "season_max"),
+    names_to = "threshold",
+    values_to = "threshold_value"
+  ) %>%
+  mutate(
+    qc_test = "climatology",
+    variable = "sensor_depth_measured_m"
   )
 
 # rolling standard deviation
@@ -297,6 +318,65 @@ spike_depth <- dat_depth %>%
     fail_factor = 3
   )
 
+# no good aquameasure depth data for Pictou or Digby county, so use vr2 thresholds
+pictou_spike <-   data.frame(
+    qc_test = "spike",
+    variable = "sensor_depth_measured_m",
+    county = "Pictou",
+    sensor_type = "aquameasure",
+    threshold = "spike_low",
+    threshold_value = filter(
+      spike_depth,
+      variable == "sensor_depth_measured_m",
+      county == "Pictou",
+      threshold == "spike_low",
+      )$threshold_value
+  ) %>%
+  bind_rows(
+    data.frame(
+    qc_test = "spike",
+    variable = "sensor_depth_measured_m",
+    county = "Pictou",
+    sensor_type = "aquameasure",
+    threshold = "spike_high",
+    threshold_value = filter(
+      spike_depth,
+      variable == "sensor_depth_measured_m",
+      county == "Pictou",
+      threshold == "spike_high",
+    )$threshold_value
+  ))
+
+digby_spike <-   data.frame(
+  qc_test = "spike",
+  variable = "sensor_depth_measured_m",
+  county = "Digby",
+  sensor_type = "aquameasure",
+  threshold = "spike_low",
+  threshold_value = filter(
+    spike_depth,
+    variable == "sensor_depth_measured_m",
+    county == "Digby",
+    threshold == "spike_low",
+  )$threshold_value
+) %>%
+  bind_rows(
+    data.frame(
+      qc_test = "spike",
+      variable = "sensor_depth_measured_m",
+      county = "Digby",
+      sensor_type = "aquameasure",
+      threshold = "spike_high",
+      threshold_value = filter(
+        spike_depth,
+        variable == "sensor_depth_measured_m",
+        county == "Digby",
+        threshold == "spike_high",
+      )$threshold_value
+    ))
+
+spike_depth <- bind_rows(spike_depth, pictou_spike, digby_spike) %>%
+  arrange(county, sensor_type)
 
 # Temperature (group by county) -------------------------------------------------------------
 
