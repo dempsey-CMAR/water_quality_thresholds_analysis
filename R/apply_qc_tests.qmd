@@ -20,15 +20,22 @@ library(purrr)
 library(qaqcmar)
 library(sensorstrings)
 library(stringr)
+library(tidyr)
 
 source(here("functions/subchunkify.R"))
 
 dt_options <- list(
   dom = 'ft',
   paging = FALSE,
-  searching = TRUE,
   scrollY = "500px",
-  scrollX = "500px",
+  searching = TRUE,
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+dt_options2 <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
   columnDefs = list(list(className = 'dt-center', targets = "_all"))
 )
 
@@ -39,7 +46,7 @@ dat_raw <- list.files(
   map(readRDS) %>%
   list_rbind()
 
-
+# variables in dat_raw
 vars <- dat_raw %>% 
   ss_pivot_longer() %>% 
   distinct(variable) %>% 
@@ -47,15 +54,33 @@ vars <- dat_raw %>%
 vars <- sort(vars$variable)
 ```
 
-Processed on: `r Sys.Date()``
+Processed on: `r Sys.Date()`
 
 # Shut-In Island
 
-## Figure 1
+## Station Details
+
+### Deployment Dates
+```{r}
+dat_raw %>% 
+  distinct(deployment_range) %>% 
+  separate(
+    deployment_range, 
+    into = c("deployment_date", "retrieval_date"), 
+    sep = " to "
+  ) %>% 
+  datatable(options = list(
+    dom = 'ft',
+    paging = FALSE,
+    searching = TRUE,
+    columnDefs = list(list(className = 'dt-center', targets = "_all"))
+  ), rownames = FALSE)
+```
+
+### Station Data
 ```{r}
 #| fig-height: 8
-
-#ss_ggplot_variables(dat_raw)
+ss_ggplot_variables(dat_raw)
 ```
 
 
@@ -74,9 +99,6 @@ thresholds %>%
 ### Apply test & benchmark
 ```{r}
 #| echo: true
-
-#dat_gr <- qc_test_grossrange(dat_raw)
-
 microbenchmark(dat_gr <- qc_test_grossrange(dat_raw), times = 5)
 ```
 
@@ -125,173 +147,312 @@ for(i in 1:length(vars)){
 ```{r}
 dat_gr %>% 
   qc_summarise_flags(qc_tests = "grossrange") %>% 
-  datatable(options = dt_options)
+  select(-qc_test) %>% 
+  datatable(options = dt_options2, rownames = FALSE)
 ```
 
 
-`r knitr::knit_exit()`
+## Climatology Test
 
+### Table 2: Climatology thresholds
+```{r}
+thresholds %>% 
+  filter(county == "Halifax"| is.na(county), 
+         qc_test == "climatology") %>% 
+  select(-c(county, qc_test, sensor_type)) %>% 
+  arrange(variable) %>% 
+  datatable(options = dt_options, rownames = FALSE, )
+```
+
+### Apply test & benchmark
 ```{r}
 #| echo: true
-
-p <- qc_plot_flags(dat_gr, qc_tests = "grossrange")
+microbenchmark(dat_cl <- qc_test_climatology(dat_raw), times = 5)
 ```
+
+### Columns
+```{r}
+#| echo: true
+colnames(dat_cl)
+```
+
+### Flag Plots
 
 ::: panel-tabset
 
 ```{r}
 #| results: "asis"
-#| message: false
 #| fig-height: 10
 
-for(i in seq_along(p)){
+dat_cl <- dat_cl %>% 
+  qc_pivot_longer(qc_tests = "climatology")
+
+for(i in 1:length(vars)){
+
+  dat_i <- dat_cl %>% 
+    filter(variable == vars[i])
   
-  p_i <- p[i]
+  # height of figure 
+  sensors <- unique(dat_i$sensor_serial_number)
+  n_sensor <- length(sensors)
   
-  # height of figure j
-  # access data used to make fig
-  n_sensor <- length(unique(p_i[[1]][[1]][[1]]$sensor_serial_number))
- # h = 2 * n_sensor
+  if(n_sensor < 10) h = 2 * n_sensor
+  if(n_sensor >= 10) h = 35 # will get error if this is too big
   
-  cat('\n###', names(p_i[1]), '\n')
+  cat('\n####', vars[i], '\n')
   
-  print(p_i[[1]][[1]])
+  p_i <- qc_plot_flags(dat_i, qc_tests = "climatology", vars = vars[i]) 
   
- # p_i <- p_i$temperature_degree_c
-  
-  #p_i <- ggplot(iris, aes(Sepal.Length, Sepal.Width)) + geom_point()
-  
-  #subchunkify(p_i[1], fig_height = h, fig_width = 8.5)
+  subchunkify(p_i[[1]][[1]], fig_height = h, fig_width = 8.5)
 }
+ 
 ```
 :::
 
+### Flag Summary
+```{r}
+dat_cl %>% 
+  qc_summarise_flags(qc_tests = "climatology") %>% 
+  select(-qc_test) %>% 
+  datatable(options = dt_options2, rownames = FALSE)
+```
 
 
-## Flag Plots
+## Rolling Standard Deviation Test
+
+### Table 3: Rolling Standard Deviation thresholds
+```{r}
+thresholds %>% 
+  filter(county == "Halifax"| is.na(county), 
+         qc_test == "rolling_sd") %>% 
+  select(-c(county, qc_test, sensor_type, month)) %>% 
+  arrange(variable) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
+
+### Apply test & benchmark
 ```{r}
 #| echo: true
-
-p <- qc_plot_flags(dat_gr, qc_tests = "grossrange")
+microbenchmark(dat_sd <- qc_test_rolling_sd(dat_raw), times = 5)
 ```
+
+### Columns
+```{r}
+#| echo: true
+colnames(dat_sd)
+```
+
+### Flag Plots
 
 ::: panel-tabset
 
-### Dissolved Oxygen - mg/L
 ```{r}
-#| fig-height: 6
-
-p$dissolved_oxygen_uncorrected_mg_per_l$grossrange
-```
-
-### Dissolved Oxygen - percent saturation
-```{r}
-#| fig-height: 6
-
-p$dissolved_oxygen_percent_saturation$grossrange
-```
-
-### Measured Sensor Depth
-```{r}
-#| fig-height: 6
-
-p$sensor_depth_measured_m$grossrange
-```
-
-### Temperature
-```{r}
+#| results: "asis"
 #| fig-height: 10
 
-p_temp <- qc_plot_flags(
-  dat_gr, qc_tests = "grossrange", vars = "temperature_degree_c", ncol = 3)
+dat_sd <- dat_sd %>% 
+  qc_pivot_longer(qc_tests = "rolling_sd")
 
-p_temp$temperature_degree_c$grossrange
+for(i in 1:length(vars)){
+  
+  dat_i <- dat_sd %>% 
+    filter(variable == vars[i])
+  
+  # height of figure 
+  sensors <- unique(dat_i$sensor_serial_number)
+  n_sensor <- length(sensors)
+  
+  if(n_sensor < 10) h = 2 * n_sensor
+  if(n_sensor >= 10) h = 35 # will get error if this is too big
+  
+  cat('\n####', vars[i], '\n')
+  
+  p_i <- qc_plot_flags(dat_i, qc_tests = "rolling_sd", vars = vars[i]) 
+  
+  subchunkify(p_i[[1]][[1]], fig_height = h, fig_width = 8.5)
+}
+ 
 ```
-
 :::
 
+### Flag Summary
+```{r}
+dat_sd %>% 
+  qc_summarise_flags(qc_tests = "rolling_sd") %>% 
+  select(-qc_test) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+```
 
 
+## Depth Crosscheck Test
 
-## Summary Table
+### Table 4: Depth crosscheck thresholds
+```{r}
+thresholds %>% 
+  filter(county == "Halifax"| is.na(county), 
+         qc_test == "depth_crosscheck") %>% 
+  select(-c(county, qc_test, sensor_type, month)) %>% 
+  arrange(variable) %>% 
+  datatable(options = dt_options2, rownames = FALSE)
+```
+
+### Apply test & benchmark
+```{r}
+#| echo: true
+microbenchmark(dat_depth <- qc_test_depth_crosscheck(dat_raw), times = 5)
+```
+
+### Columns
+```{r}
+#| echo: true
+colnames(dat_depth)
+```
+
+
+## Spike Test
+
+### Table 5: Spike Test thresholds
+```{r}
+thresholds %>% 
+  filter(county == "Halifax"| is.na(county), 
+         qc_test == "spike") %>% 
+  select(-c(county, qc_test, month)) %>% 
+  arrange(variable) %>% 
+  datatable(options = dt_options2, rownames = FALSE)
+```
+
+### Apply test & benchmark
+```{r}
+#| echo: true
+microbenchmark(
+  dat_spike <- qc_test_spike(dat_raw, join_column = "sensor_type"), 
+  times = 5
+)
+```
+
+### Columns
+```{r}
+#| echo: true
+colnames(dat_spike)
+```
+
+### Flag Plots
 
 ```{r}
+#| results: "asis"
+#| fig-height: 4
 
-dat <- qc_test_all(dat_raw, qc_tests = c("grossrange", "climatology"))
+dat_spike <- dat_spike %>% qc_pivot_longer(qc_tests = "spike")
 
-z <- dat %>% 
-  qc_summarise_flags(qc_tests = c("grossrange", "climatology"), deployment_range)
+for(i in 1:length(vars)){
 
+  dat_i <- dat_spike %>% 
+    filter(variable == vars[i])
+  
+  # height of figure 
+  sensors <- unique(dat_i$sensor_serial_number)
+  n_sensor <- length(sensors)
+  
+  if(n_sensor < 10) h = 2 * n_sensor
+  if(n_sensor >= 10) h = 35 # will get error if this is too big
+  
+  cat('\n####', vars[i], '\n')
+  
+  p_i <- qc_plot_flags(dat_i, qc_tests = "spike", vars = vars[i]) 
+  
+  subchunkify(p_i[[1]][[1]], fig_height = h, fig_width = 8.5)
+}
+```
 
-x <- dat %>% 
-  qc_pivot_longer(qc_tests = c("grossrange", "climatology")) %>%
-  group_by(variable) %>% 
-  mutate(n_obs = n()) %>% 
-  ungroup() %>% 
-  pivot_longer(
-    cols = contains("_flag_value"), 
-    names_to = "qc_test", 
-    names_prefix = "_flag_value",
-    values_to = "flag_value"
-  ) %>% 
-  mutate(qc_test = str_remove(qc_test, "_flag_value")) %>% 
-  group_by(qc_test, variable, flag_value, n_obs) %>% 
-  summarise(n_fl  = n()) %>% 
-  ungroup() %>% 
-  mutate(n_percent = round(n_fl / n_obs, digits = 2)) %>% 
-  qc_assign_flag_labels() %>% 
-  select(-n_obs) %>% 
-  rename(n_flag = n_fl) %>% 
-  arrange(qc_test, variable, flag_value)
-
-y <- dat_gr %>% 
-  qc_pivot_longer(qc_tests = "grossrange") %>% 
-  group_by(variable) %>% 
-  mutate(n_obs = n()) %>% 
-  ungroup() %>% 
-  group_by(variable, n_obs, grossrange_flag_value) %>% 
-  summarise(n_fl  = n()) %>% 
-  ungroup() %>% 
-  mutate(n_percent = round(n_fl / n_obs, digits = 2)) %>% 
-  qc_assign_flag_labels() %>% 
-  select(-n_obs) %>% 
-  rename(n_flag = n_fl) %>% 
-  arrange(variable, grossrange_flag_value)
+### Flag Summary
+```{r}
+dat_spike %>% 
+  qc_summarise_flags(qc_tests = "spike") %>% 
+  select(-qc_test) %>% 
+  datatable(options = dt_options2, rownames = FALSE)
+```
 
 
-dat <- qc_test_grossrange(dat_raw)
+## All Tests
 
-depth <- dat %>% 
-  filter(grossrange_flag_sensor_depth_measured_m == 2) %>% 
+### Apply test & benchmark
+```{r}
+#| echo: true
+#| message: false
+
+qc_tests = c("grossrange", 
+             "climatology", 
+             "rolling_sd", 
+             "depth_crosscheck", 
+             "spike")
+
+microbenchmark(
+  dat_all <- qc_test_all(
+    dat_raw, 
+    qc_tests = qc_tests, 
+    join_column_spike = "sensor_type",
+    ping = TRUE),
+  times = 5
+)
+```
+
+### Columns
+```{r}
+#| echo: true
+colnames(dat_all)
+```
+
+### Check
+
+```{r}
+dat_check <- qc_pivot_longer(dat_all, qc_tests = qc_tests)
+```
+
+```{r}
+#| echo: true
+all_equal(
+  select(dat_check, grossrange_flag_value),
+  select(dat_gr, grossrange_flag_value)
+)
+```
+
+```{r}
+#| echo: true
+all_equal(
+  select(dat_check, climatology_flag_value), 
+  select(dat_cl, climatology_flag_value)
+)
+```
+
+```{r}
+#| echo: true
+all_equal(
+  select(dat_check, rolling_sd_flag_value),
+  select(dat_sd, rolling_sd_flag_value)
+)
+```
+
+```{r}
+#| echo: true
+
+x <-  dat_check %>% 
   select(
-    sensor_type, sensor_serial_number, sensor_depth_at_low_tide_m,
-    value_sensor_depth_measured_m,
-    grossrange_flag_sensor_depth_measured_m
-  )
+    depth_crosscheck_flag_sensor_depth_measured_m = depth_crosscheck_flag_value) %>% 
+  filter(depth_crosscheck_flag_sensor_depth_measured_m != 2)
+
+y <- select(dat_depth, depth_crosscheck_flag_sensor_depth_measured_m) %>% 
+  filter(depth_crosscheck_flag_sensor_depth_measured_m != 2)
+
+all_equal(x , y)
 
 ```
-
-
 
 ```{r}
-# hobo5 <- dat_gr %>% 
-#   filter(sensor_depth_at_low_tide_m == 5 & sensor_type == "hobo") %>% 
-#   select(
-#     deployment_range, timestamp_utc, sensor_type, sensor_serial_number,
-#     sensor_depth_at_low_tide_m, 
-#     value_dissolved_oxygen_uncorrected_mg_per_l,
-#     value_temperature_degree_c,
-#     grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l,
-#     grossrange_flag_temperature_degree_c,
-#     grossrange_flag_dissolved_oxygen_uncorrected_mg_per_l
-#     )
-# 
-# p <- qc_plot_flags(hobo5, qc_tests = "grossrange", vars = "temperature_degree_c")
-# 
-# p$temperature_degree_c$grossrange
-# 
-# p <- qc_plot_flags(hobo5, qc_tests = "grossrange", vars = "dissolved_oxygen_uncorrected_mg_per_l")
-# p$dissolved_oxygen_uncorrected_mg_per_l$grossrange
-
+#| echo: true
+all_equal(
+  select(dat_check, spike_flag_value), 
+  select(dat_spike, spike_flag_value)
+)
 ```
+
 

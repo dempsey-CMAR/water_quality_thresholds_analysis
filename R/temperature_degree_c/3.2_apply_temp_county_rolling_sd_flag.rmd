@@ -12,6 +12,9 @@ params:
 ---
 
 ```{r, set-up, include=FALSE}
+# code was modified Nov 16, 2023 to check thresh = q_999
+# should be modified again for clarity and speed
+
 knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
 
 library(data.table)
@@ -40,15 +43,21 @@ dt_options <- list(
 )
 
 thresholds_county <- fread(here("output/temperature_rolling_sd_thresholds.csv")) %>% 
-  pivot_longer(cols = c(-"county"), names_to = "threshold", values_to = "threshold_value") %>% 
+  #pivot_longer(cols = c(-"county"), names_to = "threshold", values_to = "threshold_value") %>% 
   mutate(county = tolower(county)) %>% 
-  filter(county == params$county, threshold == params$thresh)
+  filter(county == params$county)
+ # filter(county == params$county, threshold == params$thresh)
 
 county <- params$county
 
 thresh <- thresholds_county$threshold_value
+ 
+# dat_raw <- readRDS(here("data/temp_rolling_sd_prelim_qc.rds")) %>% 
+#   select(-c(sensor_type, int_sample, n_sample, rolling_sd_flag_temperature_degree_c)) %>% 
+#   mutate(county = tolower(county)) %>% 
+#   filter(county == params$county) 
 
-path <- file.path("Y:/coastal_monitoring_program/data_branches/water_quality/processed_data/deployment_data")
+path <- file.path("R:/data_branches/water_quality/processed_data/deployment_data")
 
 path <- paste0(path, "/", county, "/new")
 
@@ -57,16 +66,16 @@ path <- paste0(path, "/", county, "/new")
 ```{r, import-data}
 #| message: FALSE
 
-dat <- list.files(path, full.names = TRUE, pattern = ".rds") %>% 
-  purrr::map(readRDS) %>% 
-  list_rbind() %>% 
+dat <- list.files(path, full.names = TRUE, pattern = ".rds") %>%
+  purrr::map(readRDS) %>%
+  list_rbind() %>%
   select(
-    -c(waterbody, lease, latitude, longitude, string_configuration, 
+    -c(waterbody, lease, latitude, longitude, string_configuration,
        contains("dissolved_oxygen"), contains("salinity"), contains("uncorrected"),
        contains("sensor_depth_measured")
     )
-  ) 
-  
+  )
+
 
 if(!is.numeric(thresh)) stop(paste0("threshold must be numeric, not: ", thresh))
 
@@ -74,7 +83,7 @@ dat_qc <- dat %>%
   qc_test_rolling_sd(
     rolling_sd_table = data.frame(
       variable = "temperature_degree_c",
-      stdev_max = thresh
+      rolling_sd_max = thresh
     )
   )
 
@@ -91,10 +100,11 @@ qc_summary <- dat_qc %>%
   arrange(station, deployment_range)
 ```
 
-# `r county` QC Flags: Temperature, Rolling standard deviation
+# `r params$county` QC Flags: Temperature, Rolling standard deviation
 
 `r Sys.Date()`
 
+`r thresh`
 
 # Summary Table
 
@@ -149,13 +159,8 @@ if("Suspect/Of Interest" %in% colnames(qc_summary)) {
       if(n_sensor > 1) h = 2.75 * n_sensor
       
       
-      p <- qc_plot_flags(dat_j)
+      p <- qc_plot_flags(dat_j, qc_tests = "rolling_sd")
       p <- p$temperature_degree_c$rolling_sd
-
-        # ggplot(dat_j, aes(timestamp_utc, value, col = factor(flag_sd))) +
-        # geom_point(size = 0.5) +
-        # scale_colour_manual("Flag Value", values = flag_colours, drop = FALSE) +
-        # facet_wrap(~sensor_serial_number, ncol = 1, scales = "free_y")
 
       cat('\n###', depl_j, '\n')
       

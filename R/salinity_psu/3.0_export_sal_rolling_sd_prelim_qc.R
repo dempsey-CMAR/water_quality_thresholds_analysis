@@ -21,6 +21,7 @@ dat_raw <- import_strings_data(input_path = here("data-raw")) %>%
 
 # calculate rolling standard deviation ------------------------------------
 # this takes about 10 -15 mins to run
+# I think this is broken now that can only do one county at a time
 dat_raw_qc <- dat_raw %>%
   qc_test_rolling_sd(keep_sd_cols = TRUE)
 

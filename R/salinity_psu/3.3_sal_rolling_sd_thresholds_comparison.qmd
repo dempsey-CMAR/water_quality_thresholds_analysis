@@ -53,7 +53,6 @@ dat_roll <- readRDS(here("data/sal_rolling_sd_reprocessed.rds")) %>%
   )
 
 # calculate potential do thresholds from filtered data
-# calculate thresholds
 thresholds <- readRDS(here("data/sal_rolling_sd_prelim_qc.rds")) %>%
   select(-c(sensor_type, int_sample, n_sample, rolling_sd_flag_salinity_psu)) %>%
   mutate(
