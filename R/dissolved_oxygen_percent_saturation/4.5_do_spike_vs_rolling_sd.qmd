@@ -1,0 +1,270 @@
+---
+title: "Spike Test vs. Rolling Standard Deviation"
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, dpi = 600, fig.width = 8)
+
+library(data.table)
+library(DT)
+library(dplyr)
+library(ggplot2)
+library(gtools)
+library(here)
+library(knitr)
+library(lubridate)
+library(plotly)
+library(purrr)
+library(qaqcmar)
+library(readr)
+library(strings)
+library(sensorstrings)
+library(summaryplots)
+library(tidyr)
+library(viridis)
+
+source(here("functions/filter_out_suspect_obs.R"))
+source(here("functions/subchunkify.R"))
+
+theme_set(theme_light())
+
+dt_options <- list(
+  dom = 'ft',
+  paging = FALSE,
+  searching = TRUE,
+  scrollY = "500px",
+  columnDefs = list(list(className = 'dt-center', targets = "_all"))
+)
+
+# calculate potential do thresholds from filtered data
+q_thresholds <- readRDS(here("data/do_rolling_sd_prelim_qc.rds")) %>%
+  select(
+    -c(sensor_type, int_sample, n_sample, n_sample_effective,
+       sd_roll, rolling_sd_flag_dissolved_oxygen_percent_saturation)
+  ) %>%
+  ss_pivot_longer() %>%
+  select(
+    COUNTY = county,
+    STATION = station,
+    DEPLOYMENT_PERIOD = deployment_range,
+    TIMESTAMP = timestamp_utc,
+    everything()) %>%
+  mutate(VARIABLE = "Dissolved Oxygen", UNITS = "percent saturation") %>%
+  filter_out_suspect_obs() %>%
+  select(-c(VARIABLE, UNITS)) %>%
+  rename(
+    county = COUNTY,
+    station = STATION,
+    deployment_range = DEPLOYMENT_PERIOD,
+    timestamp_utc = TIMESTAMP
+  ) %>%
+  group_by(county, station, deployment_range, sensor_serial_number, variable) %>%
+  dplyr::arrange(timestamp_utc, .by_group = TRUE) %>%
+  mutate(
+    lag_value = lag(value),
+    lead_value = lead(value),
+    spike_ref = (lag_value + lead_value) / 2,
+    spike_value = abs(value - spike_ref),
+  ) %>%
+  ungroup() %>% 
+  summarise(
+    q_90 = round(quantile(spike_value, prob = 0.90, na.rm = TRUE), digits = 3),
+    q_95 = round(quantile(spike_value, prob = 0.95, na.rm = TRUE), digits = 3),
+    q_997 = round(quantile(spike_value, prob = 0.997, na.rm = TRUE), digits = 3),
+    q_999 = round(quantile(spike_value, prob = 0.999, na.rm = TRUE), digits = 3)
+  ) 
+
+# reprocessed data (no preliminary QC)
+dat_raw <- readRDS(here("data/do_rolling_sd_reprocessed.rds")) %>%
+  select(-c(int_sample, n_sample, n_sample_effective, sd_roll, rolling_sd_flag_dissolved_oxygen_percent_saturation)) %>%
+  rename(dissolved_oxygen_percent_saturation = value_dissolved_oxygen_percent_saturation) 
+
+```
+
+```{r}
+#| echo: false
+#| message: false
+
+spike_table <- q_thresholds %>% 
+  select(spike_low = q_999) %>% 
+  mutate(
+    variable = "dissolved_oxygen_percent_saturation", 
+    spike_high = 3 * spike_low
+  ) %>% 
+  select(variable, spike_high, spike_low)
+
+rolling_sd_table <- thresholds %>% 
+  filter(
+    qc_test == "rolling_sd", 
+    variable == "dissolved_oxygen_percent_saturation"
+  ) %>% 
+  pivot_wider(names_from = "threshold", values_from = "threshold_value") %>% 
+  select(variable, rolling_sd_max)
+
+counties <- unique(dat_raw$county)
+dat_qc <- NULL
+
+for(i in seq_along(counties)) {
+  
+  county_i <- counties[i]
+  
+  dat_qc[[i]] <- dat_raw %>% 
+    filter(county == county_i) %>% 
+    qc_test_spike(spike_table = spike_table) %>% 
+    rename(
+      dissolved_oxygen_percent_saturation = value_dissolved_oxygen_percent_saturation,
+      spike_flag = spike_flag_dissolved_oxygen_percent_saturation) %>%
+    qc_test_rolling_sd(rolling_sd_table = rolling_sd_table)
+}
+
+dat_qc <- dat_qc %>% 
+  map_df(bind_rows) %>% 
+  rename(spike_flag_dissolved_oxygen_percent_saturation = spike_flag) %>% 
+  mutate(
+    sensor_type = NA,
+    spike_flag_dissolved_oxygen_percent_saturation = as.numeric(spike_flag_dissolved_oxygen_percent_saturation)
+  ) %>% 
+  select(
+    c(1:7), sensor_type,
+    value_dissolved_oxygen_percent_saturation, 
+    rolling_sd_flag_dissolved_oxygen_percent_saturation,
+    spike_flag_dissolved_oxygen_percent_saturation
+  )
+
+flag_colours <- c("chartreuse4", "#E6E1BC", "#EDA247", "#DB4325", "grey24")
+
+```
+
+January 3, 2024
+
+- This file compares spike test results and rolling standard deviation test results.
+- Spike test thresholds are q99.9 of the pooled data.
+
+
+```{r}
+both <- dat_qc %>% 
+  filter(rolling_sd_flag_dissolved_oxygen_percent_saturation > 2 & spike_flag_dissolved_oxygen_percent_saturation > 2)
+
+rolling_sd <- dat_qc %>% 
+  filter(rolling_sd_flag_dissolved_oxygen_percent_saturation > 2 & spike_flag_dissolved_oxygen_percent_saturation <= 2)
+
+spike <- dat_qc %>% 
+  filter(rolling_sd_flag_dissolved_oxygen_percent_saturation <= 2 & spike_flag_dissolved_oxygen_percent_saturation > 2) %>% 
+  mutate(spike_only = TRUE)
+
+```
+
+# Spike & Rolling SD Results
+
+Stations where there is at least one observation flagged by the spike test that is not flagged by the rolling sd test.
+
+```{r, body} 
+#| results: 'asis'
+#| message: FALSE
+
+#include number of obs
+
+stations <- unique(spike$station)
+ 
+for(i in seq_along(stations)){
+  
+  station_i <- stations[i]
+  
+  cat('\n##', station_i, '\n')
+  
+  cat('\n')
+  
+  # subset data to station of interest
+  dat_i <- dat_qc %>%
+    filter(station == station_i) %>%
+    qc_pivot_longer(qc_tests = c("spike", "rolling_sd")) %>% 
+    ss_convert_depth_to_ordered_factor()
+  
+  # height of figure j
+  n_sensor <- length(unique(dat_i$sensor_serial_number))
+  
+  if(n_sensor == 1) h = 2.75
+  if(n_sensor > 1) h = 2.75 * n_sensor
+  
+  p <- qc_plot_flags(dat_i, qc_tests = c("spike", "rolling_sd"), flag_title = TRUE)
+ 
+  subchunkify(p, fig_height = h, fig_width = 8.5)
+  
+  cat('\n')
+}
+
+```
+
+# Only Spike Test
+
+Observations flagged by the spike test but not the rolling sd test.
+
+## Number of Observations
+```{r}
+
+spike %>% 
+  group_by(county, station) %>% 
+  summarise(n = n()) %>% 
+  datatable(options = dt_options, rownames = FALSE)
+
+```
+
+## Observations
+
+```{r} 
+#| results: 'asis'
+#| message: FALSE
+
+#include number of obs
+
+stations <- unique(spike$station)
+ 
+for(i in seq_along(stations)){
+  
+  station_i <- stations[i]
+  
+  cat('\n##', station_i, '\n')
+  
+  cat('\n')
+  
+  # subset data to station of interest
+  dat_i <- dat_qc %>%
+    filter(station == station_i) %>%
+    qc_pivot_longer(qc_tests = c("spike", "rolling_sd")) %>% 
+    ss_convert_depth_to_ordered_factor() %>% 
+    left_join(
+      spike %>% 
+        filter(station == station_i) %>% 
+        select(county, station, deployment_range, timestamp_utc,
+               sensor_serial_number, spike_only), 
+      by = c(
+        "county", "station", "deployment_range", "timestamp_utc",
+        "sensor_serial_number")
+    ) %>% 
+    mutate(spike_only = if_else(is.na(spike_only), FALSE, spike_only))
+  
+  # height of figure j
+  n_sensor <- length(unique(dat_i$sensor_serial_number))
+  
+  if(n_sensor == 1) h = 2.75
+  if(n_sensor > 1) h = 2.75 * n_sensor
+  
+p <- ggplot(dat_i, aes(timestamp_utc, value, col = spike_only)) +
+    geom_point() +
+    scale_color_manual(values = c(flag_colours[1], flag_colours[3]), guide = "none") +
+    facet_wrap(~sensor_serial_number, ncol = 1)
+ 
+  subchunkify(p, fig_height = h, fig_width = 8.5)
+  
+  cat('\n')
+}
+
+```
